@@ -1,0 +1,491 @@
+"""
+API-сервер для Mini App.
+Работает рядом с ботом в одном процессе (порт 8080).
+"""
+import json
+import logging
+import time
+from collections import defaultdict
+from typing import Any
+
+from aiohttp import web
+
+from db import (
+    USE_SQLITE,
+    add_report,
+    find_nearest_stations,
+    find_stations_by_name,
+    get_station_analytics,
+    get_station_by_id,
+    get_station_current_status,
+    get_user_id_by_telegram_id,
+    upsert_user,
+    check_and_award_badges,
+    BADGE_CATALOG,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# === Rate limit (in-memory, на IP) ===
+# Простой token bucket: max N запросов в минуту на IP
+_rate_limit: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT_PER_MIN = 60  # 60 GET / 30 POST в минуту на IP
+
+
+def _check_rate(ip: str, max_per_min: int) -> bool:
+    """Возвращает True если запрос разрешён, False если rate limit превышен."""
+    now = time.time()
+    # Чистим старые записи (>60 сек)
+    _rate_limit[ip] = [t for t in _rate_limit[ip] if now - t < 60]
+    if len(_rate_limit[ip]) >= max_per_min:
+        return False
+    _rate_limit[ip].append(now)
+    return True
+
+
+def _serialize_station(s: dict) -> dict:
+    """Приводит станцию к JSON-безопасному виду."""
+    out = dict(s)
+    if "fuel_types" in out and isinstance(out["fuel_types"], str):
+        try:
+            out["fuel_types"] = json.loads(out["fuel_types"])
+        except Exception:
+            out["fuel_types"] = []
+    return out
+
+
+def _serialize_status(s: dict) -> dict:
+    out = dict(s)
+    if "available" in out:
+        out["available"] = bool(out["available"]) if out["available"] is not None else None
+    if "has_limit" in out:
+        out["has_limit"] = bool(out["has_limit"])
+    return out
+
+
+def _parse_float(request, name: str, min_val: float, max_val: float) -> tuple[float | None, web.Response | None]:
+    """Парсит float query param с валидацией диапазона."""
+    try:
+        v = float(request.query[name])
+    except (KeyError, ValueError):
+        return None, web.json_response(
+            {"error": f"{name} is required and must be a number"},
+            status=400,
+        )
+    if not (min_val <= v <= max_val):
+        return None, web.json_response(
+            {"error": f"{name} must be in [{min_val}, {max_val}]"},
+            status=400,
+        )
+    return v, None
+
+
+# === Handlers ===
+async def handle_health(request):
+    return web.json_response({"status": "ok"})
+
+
+async def handle_stations(request):
+    """GET /api/stations?lat=..&lon=..&radius=..&fuel=92"""
+    if not _check_rate(request.remote or "?", RATE_LIMIT_PER_MIN):
+        return web.json_response({"error": "rate limit exceeded"}, status=429)
+
+    lat, err = _parse_float(request, "lat", -90, 90)
+    if err:
+        return err
+    lon, err = _parse_float(request, "lon", -180, 180)
+    if err:
+        return err
+
+    # Radius: 1-100 км (защита от DoS)
+    try:
+        radius = int(request.query.get("radius", 50))
+        if not (1 <= radius <= 100):
+            return web.json_response({"error": "radius must be in [1, 100]"}, status=400)
+    except ValueError:
+        return web.json_response({"error": "radius must be int"}, status=400)
+
+    fuel = request.query.get("fuel")
+    if fuel is not None and fuel not in ("92", "95", "98", "diesel", "100", "lpg"):
+        return web.json_response({"error": f"invalid fuel: {fuel}"}, status=400)
+
+    stations = await find_nearest_stations(
+        lat=lat, lon=lon, fuel_type=fuel, limit=200, radius_km=radius,
+    )
+
+    # Один запрос на статусы для всех АЗС (избегаем N+1)
+    station_ids = [s["id"] for s in stations]
+    statuses_by_station = await _bulk_get_statuses(station_ids)
+
+    result = []
+    for s in stations:
+        sid = s["id"]
+        statuses = statuses_by_station.get(sid, [])
+        result.append({
+            "id": sid,
+            "name": s.get("name"),
+            "operator": s.get("operator"),
+            "city": s.get("city"),
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
+            "distance_km": s.get("distance_km"),
+            "is_verified": bool(s.get("is_verified")),
+            "statuses": [_serialize_status(st) for st in statuses],
+            "has_data": len(statuses) > 0,
+        })
+
+    return web.json_response({"stations": result, "count": len(result)})
+
+
+async def handle_search(request):
+    """GET /api/search?q=... — поиск АЗС по городу/имени."""
+    if not _check_rate(request.remote or "?", RATE_LIMIT_PER_MIN):
+        return web.json_response({"error": "rate limit exceeded"}, status=429)
+
+    query = request.query.get("q", "").strip()
+    if len(query) < 2:
+        return web.json_response(
+            {"error": "q parameter required (min 2 chars)"},
+            status=400,
+        )
+
+    stations = await find_stations_by_name(query, limit=30)
+
+    station_ids = [s["id"] for s in stations]
+    statuses_by_station = await _bulk_get_statuses(station_ids)
+
+    result = []
+    for s in stations:
+        sid = s["id"]
+        statuses = statuses_by_station.get(sid, [])
+        result.append({
+            "id": sid,
+            "name": s.get("name"),
+            "operator": s.get("operator"),
+            "city": s.get("city"),
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
+            "is_verified": bool(s.get("is_verified")),
+            "statuses": [_serialize_status(st) for st in statuses],
+            "has_data": len(statuses) > 0,
+        })
+
+    return web.json_response({"stations": result, "count": len(result)})
+
+
+async def _bulk_get_statuses(station_ids: list[int]) -> dict[int, list]:
+    """Один запрос на получение статусов для многих АЗС. Избегаем N+1."""
+    if not station_ids:
+        return {}
+    from db import _fetch
+    placeholders = ",".join("?" for _ in station_ids)
+    if USE_SQLITE:
+        rows = await _fetch(
+            f"""SELECT station_id, fuel_type, available, price, queue_size, has_limit,
+                      limit_liters, confidence, created_at
+               FROM (
+                   SELECT *, ROW_NUMBER() OVER (
+                       PARTITION BY station_id, fuel_type
+                       ORDER BY confidence DESC, created_at DESC
+                   ) AS rn
+                   FROM reports
+                   WHERE station_id IN ({placeholders})
+                     AND created_at > datetime('now', '-1 day')
+               )
+               WHERE rn = 1""",
+            *station_ids,
+        )
+    else:
+        # PostgreSQL: DISTINCT ON работает
+        rows = await _fetch(
+            f"""SELECT DISTINCT ON (station_id, fuel_type)
+                    station_id, fuel_type, available, price, queue_size,
+                    has_limit, limit_liters, confidence, created_at
+                FROM reports
+                WHERE station_id = ANY($1)
+                  AND created_at > NOW() - INTERVAL '24 hours'
+                ORDER BY station_id, fuel_type, confidence DESC, created_at DESC""",
+            list(station_ids),
+        )
+
+    # Конвертируем SQLite int → bool/None
+    result: dict[int, list] = {}
+    for r in rows:
+        sid = r["station_id"]
+        if r.get("available") == 1:
+            r["available"] = True
+        elif r.get("available") == 0:
+            r["available"] = False
+        elif r.get("available") == 2:
+            r["available"] = None
+        result.setdefault(sid, []).append(r)
+    return result
+
+
+async def handle_station_detail(request):
+    """GET /api/stations/{id}"""
+    if not _check_rate(request.remote or "?", RATE_LIMIT_PER_MIN):
+        return web.json_response({"error": "rate limit exceeded"}, status=429)
+
+    try:
+        station_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "invalid id"}, status=400)
+
+    station = await get_station_by_id(station_id)
+    if not station:
+        return web.json_response({"error": "not found"}, status=404)
+
+    statuses = await get_station_current_status(station_id)
+    return web.json_response({
+        "station": _serialize_station(station),
+        "statuses": [_serialize_status(st) for st in statuses],
+    })
+
+
+async def handle_price_history(request):
+    """GET /api/stations/{id}/price-history?fuel=92&days=30"""
+    if not _check_rate(request.remote or "?", RATE_LIMIT_PER_MIN):
+        return web.json_response({"error": "rate limit exceeded"}, status=429)
+
+    try:
+        station_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "invalid id"}, status=400)
+
+    fuel = request.query.get("fuel", "95")
+    if fuel not in ("92", "95", "98", "diesel", "100", "lpg"):
+        return web.json_response({"error": f"invalid fuel: {fuel}"}, status=400)
+
+    try:
+        days = int(request.query.get("days", "30"))
+        if not (1 <= days <= 365):
+            return web.json_response({"error": "days must be in [1, 365]"}, status=400)
+    except ValueError:
+        return web.json_response({"error": "days must be int"}, status=400)
+
+    from db import _fetch
+    if USE_SQLITE:
+        rows = await _fetch(
+            """SELECT fuel_type, price, created_at
+               FROM reports
+               WHERE station_id = ? AND fuel_type = ? AND price IS NOT NULL
+                 AND created_at > datetime('now', ?)
+               ORDER BY created_at DESC
+               LIMIT 50""",
+            station_id, fuel, f"-{days} days",
+        )
+    else:
+        rows = await _fetch(
+            """SELECT fuel_type, price, created_at
+               FROM reports
+               WHERE station_id = $1 AND fuel_type = $2 AND price IS NOT NULL
+                 AND created_at > NOW() - ($3 || ' days')::interval
+               ORDER BY created_at DESC
+               LIMIT 50""",
+            station_id, fuel, str(days),
+        )
+
+    history = []
+    for r in rows:
+        history.append({
+            "fuel_type": r.get("fuel_type"),
+            "price": float(r["price"]) if r.get("price") is not None else None,
+            "at": str(r.get("created_at")),
+        })
+
+    return web.json_response({
+        "station_id": station_id,
+        "fuel": fuel,
+        "history": history,
+        "count": len(history),
+    })
+
+
+async def handle_station_analytics(request):
+    """GET /api/stations/{id}/analytics — аналитика для владельца АЗС."""
+    try:
+        station_id = int(request.match_info["id"])
+    except (KeyError, ValueError, TypeError):
+        return web.json_response({"error": "invalid id"}, status=400)
+
+    days = int(request.query.get("days", 30))
+    if days < 1 or days > 365:
+        days = 30
+
+    analytics = await get_station_analytics(station_id, days)
+    return web.json_response(analytics)
+
+
+async def handle_create_report(request):
+    """POST /api/reports — создание отчёта из Mini App"""
+    # Строже rate limit для POST
+    if not _check_rate(request.remote or "?", 30):
+        return web.json_response({"error": "rate limit exceeded"}, status=429)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+
+    if not isinstance(data, dict):
+        return web.json_response({"error": "expected json object"}, status=400)
+
+    station_id = data.get("station_id")
+    fuel_type = data.get("fuel_type")
+    available = data.get("available")
+    telegram_id = data.get("telegram_id")
+    first_name = str(data.get("first_name", "MiniApp User"))[:64]
+    price = data.get("price")
+    queue_size = data.get("queue_size")
+    has_limit = data.get("has_limit", False)
+    limit_liters = data.get("limit_liters")
+
+    if not station_id or not isinstance(station_id, int):
+        return web.json_response({"error": "station_id (int) is required"}, status=400)
+    if not fuel_type or fuel_type not in ("92", "95", "98", "diesel", "100", "lpg"):
+        return web.json_response({"error": f"invalid fuel_type: {fuel_type}"}, status=400)
+    if available is not None and not isinstance(available, bool):
+        return web.json_response(
+            {"error": "available must be true, false or null"},
+            status=400,
+        )
+    if telegram_id is not None and not isinstance(telegram_id, int):
+        return web.json_response({"error": "telegram_id must be int"}, status=400)
+    if price is not None and (not isinstance(price, (int, float)) or price < 0 or price > 500):
+        return web.json_response({"error": "price must be 0..500"}, status=400)
+    if queue_size is not None and (not isinstance(queue_size, int) or queue_size < 0 or queue_size > 100):
+        return web.json_response({"error": "queue_size must be 0..100"}, status=400)
+
+    user_id = None
+    if telegram_id:
+        await upsert_user(telegram_id=telegram_id, first_name=first_name)
+        user_id = await get_user_id_by_telegram_id(telegram_id)
+
+    report_id = await add_report(
+        station_id=station_id,
+        user_id=user_id,
+        fuel_type=fuel_type,
+        available=available,
+        price=float(price) if price is not None else None,
+        queue_size=int(queue_size) if queue_size is not None else None,
+        has_limit=bool(has_limit),
+        limit_liters=int(limit_liters) if limit_liters is not None else None,
+        source="miniapp",
+    )
+
+    new_badges = await check_and_award_badges(user_id) if user_id else []
+    return web.json_response(
+        {
+            "ok": True,
+            "report_id": report_id,
+            "new_badges": [
+                {
+                    "code": b,
+                    "name": BADGE_CATALOG.get(b, {}).get("name"),
+                    "emoji": BADGE_CATALOG.get(b, {}).get("emoji"),
+                    "desc": BADGE_CATALOG.get(b, {}).get("desc"),
+                }
+                for b in new_badges
+            ],
+        }
+    )
+
+
+async def handle_price_update(request):
+    """POST /api/price-update — обновление цены топлива (от владельца/пользователя).
+
+    Тело: { station_id, fuel_type, price, available?, queue_size?, telegram_id? }
+    Создаёт обычный отчёт с заполненным price.
+    """
+    if not _check_rate(request.remote or "?", 30):
+        return web.json_response({"error": "rate limit exceeded"}, status=429)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+
+    if not isinstance(data, dict):
+        return web.json_response({"error": "expected json object"}, status=400)
+
+    station_id = data.get("station_id")
+    fuel_type = data.get("fuel_type")
+    price = data.get("price")
+    available = data.get("available", True)
+    queue_size = data.get("queue_size")
+    telegram_id = data.get("telegram_id")
+    first_name = str(data.get("first_name", "PriceUpdate"))[:64]
+
+    if not station_id or not isinstance(station_id, int):
+        return web.json_response({"error": "station_id (int) is required"}, status=400)
+    if not fuel_type or fuel_type not in ("92", "95", "98", "diesel", "100", "lpg"):
+        return web.json_response({"error": f"invalid fuel_type: {fuel_type}"}, status=400)
+    if price is None or not isinstance(price, (int, float)) or price < 0 or price > 500:
+        return web.json_response({"error": "price is required, 0..500"}, status=400)
+
+    user_id = None
+    if telegram_id:
+        await upsert_user(telegram_id=telegram_id, first_name=first_name)
+        user_id = await get_user_id_by_telegram_id(telegram_id)
+
+    report_id = await add_report(
+        station_id=station_id,
+        user_id=user_id,
+        fuel_type=fuel_type,
+        available=available if available in (True, False, None) else True,
+        price=float(price),
+        queue_size=int(queue_size) if isinstance(queue_size, int) else None,
+        source="price_update",
+    )
+
+    new_badges = await check_and_award_badges(user_id) if user_id else []
+    return web.json_response(
+        {
+            "ok": True,
+            "report_id": report_id,
+            "new_badges": [
+                {
+                    "code": b,
+                    "name": BADGE_CATALOG.get(b, {}).get("name"),
+                    "emoji": BADGE_CATALOG.get(b, {}).get("emoji"),
+                    "desc": BADGE_CATALOG.get(b, {}).get("desc"),
+                }
+                for b in new_badges
+            ],
+        }
+    )
+
+
+# === CORS ===
+# ВНИМАНИЕ: в проде ограничить через ALLOWED_ORIGINS env var.
+ALLOWED_ORIGINS = "*"  # default для dev; в проде задать через env
+
+
+async def cors_middleware(app, handler):
+    """CORS-заголовки."""
+    async def middleware(request):
+        if request.method == "OPTIONS":
+            return web.Response(headers={
+                "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            })
+        response = await handler(request)
+        response.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGINS
+        return response
+    return middleware
+
+
+def create_app() -> web.Application:
+    app = web.Application(middlewares=[cors_middleware])
+    app.router.add_get("/api/health", handle_health)
+    app.router.add_get("/api/stations", handle_stations)
+    app.router.add_get("/api/search", handle_search)
+    app.router.add_get("/api/stations/{id}", handle_station_detail)
+    app.router.add_get("/api/stations/{id}/price-history", handle_price_history)
+    app.router.add_get("/api/stations/{id}/analytics", handle_station_analytics)
+    app.router.add_post("/api/reports", handle_create_report)
+    app.router.add_post("/api/price-update", handle_price_update)
+    return app

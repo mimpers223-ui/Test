@@ -1,0 +1,13 @@
+# === Runtime ===
+aiogram==3.4.1
+aiohttp==3.9.1
+aiosqlite==0.19.0
+asyncpg==0.29.0
+python-dotenv==1.0.0
+pytz==2023.3
+
+# === SSL fix for macOS ===
+certifi>=2023.7.22
+
+# === Optional: для парсера TG-каналов ===
+# telethon==1.36.0  # раскомментируй если используешь parse_tg_channels.py

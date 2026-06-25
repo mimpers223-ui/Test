@@ -1,0 +1,39 @@
+# Render Blueprint — Бензин рядом (API + Bot)
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Деплой:
+# 1. Залей репо на GitHub
+# 2. Зайди на https://dashboard.render.com/select-repo
+# 3. Выбери свой репо и примени этот blueprint
+# 4. Задай BOT_TOKEN и CHANNEL_CHAT_ID в Environment
+# 5. (опционально) подключи Postgres для прода
+#
+# ИЛИ: создай Web Service вручную с этим startCommand.
+
+services:
+  - type: web
+    name: benzin-api
+    runtime: python
+    plan: starter
+    region: frankfurt
+    branch: main
+    rootDir: bot
+    buildCommand: pip install --upgrade pip && pip install -r ../requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PORT
+        value: 8080
+      - key: USE_SQLITE
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      # Секреты задаются вручную в Render Dashboard:
+      # - BOT_TOKEN
+      # - ADMIN_USERNAMES
+      # - CHANNEL_CHAT_ID
+      # - MINI_APP_URL=https://benzin-mini.vercel.app
+      # - DATABASE_URL (опционально, для Postgres)

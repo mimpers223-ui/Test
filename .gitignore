@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# Секреты
+.env
+.env.local
+*.env.local
+bot/.env
+backend/.env
+
+# Логи
+*.log
+bot.log
+
+# Node
+node_modules/
+dist/
+.next/
+.nuxt/
+.vite/
+.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Данные
+*.sqlite
+*.db
+*.sqlite3
+*.db-shm
+*.db-wal
+benzin.db*
+
+# Временные файлы
+tmp/
+temp/
+*.tmp

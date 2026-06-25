@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff1e3c"/>
+      <stop offset="100%" stop-color="#c8102e"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="url(#bg)"/>
+  <text x="96" y="120" font-size="84" text-anchor="middle" fill="white" font-family="system-ui">⛽</text>
+  <text x="96" y="160" font-size="20" text-anchor="middle" fill="white" font-weight="700" font-family="system-ui">Бензин</text>
+</svg>

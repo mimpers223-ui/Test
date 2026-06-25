@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Venv
+venv/
+.venv/
+env/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Git
+.git/
+.gitignore
+
+# Данные
+*.db
+*.sqlite
+*.sqlite3
+benzin.db
+
+# Логи
+*.log
+bot.log
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
