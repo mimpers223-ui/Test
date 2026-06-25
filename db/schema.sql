@@ -204,6 +204,34 @@ CREATE TRIGGER update_stations_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================================
+-- Бейджи пользователей (геймификация)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS user_badges (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    badge_code TEXT NOT NULL,
+    awarded_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, badge_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges (user_id);
+
+-- =====================================================
+-- Premium-подписки (Telegram Stars)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS premium_subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    telegram_payment_charge_id TEXT,
+    stars_amount INTEGER,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_premium_user ON premium_subscriptions (user_id) WHERE is_active;
+
+-- =====================================================
 -- View: текущий статус АЗС (последний отчёт по каждому типу топлива)
 -- =====================================================
 CREATE OR REPLACE VIEW station_current_status AS
