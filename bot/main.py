@@ -93,7 +93,9 @@ async def run_bot():
     settings.bot = bot
 
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
+        # drop_pending_updates=False — НЕ сбрасываем сообщения при перезапуске
+        # (если Render перезапустился, а пользователь нажал /start — сообщение потеряется)
+        await bot.delete_webhook(drop_pending_updates=False)
     except Exception as e:
         logger.warning("delete_webhook failed (continuing): %s", e)
     logger.info("Бот запущен")
