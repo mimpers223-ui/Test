@@ -279,7 +279,8 @@ async def main():
                         )
                         total_saved += 1
                     except Exception as e:
-                        pass  # Игнорируем отдельные ошибки
+                        if total_saved < 3:
+                            print(f"    ⚠ add_report {fuel}/{price}: {e}")
 
             await asyncio.sleep(0.5)  # Уважение к серверу
 

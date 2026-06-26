@@ -824,7 +824,11 @@ async def add_report(
     В SQLite available NOT NULL, поэтому None хранится как 2.
     Также инкрементит users.total_reports и last_active_at.
     """
-    expires_at = (datetime.now() + timedelta(hours=2)).isoformat()
+    expires_at_dt = datetime.now() + timedelta(hours=2)
+    if USE_SQLITE:
+        expires_at = expires_at_dt.isoformat()
+    else:
+        expires_at = expires_at_dt  # asyncpg требует datetime, не строку
 
     if USE_SQLITE:
         # SQLite: True=1, False=0, None=2 ("кончается")
