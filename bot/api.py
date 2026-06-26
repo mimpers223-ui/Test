@@ -27,6 +27,7 @@ from db import (
     BADGE_CATALOG,
 )
 import db  # for db._fetch, db.USE_SQLITE в get_source_stats
+import aiohttp  # для reverse geocoding
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,65 @@ def _parse_float(request, name: str, min_val: float, max_val: float) -> tuple[fl
 # === Handlers ===
 async def handle_health(request):
     return web.json_response({"status": "ok"})
+
+
+# === Кеш reverse geocoding (city по координатам) ===
+_reverse_cache: dict[tuple[float, float], dict] = {}
+
+
+async def handle_reverse_geocode(request):
+    """GET /api/reverse-geocode?lat=..&lon=..
+
+    Возвращает город и регион по координатам (Nominatim).
+    Используется Mini App для автоопределения города.
+    """
+    lat, err = _parse_float(request, "lat", -90, 90)
+    if err:
+        return err
+    lon, err = _parse_float(request, "lon", -180, 180)
+    if err:
+        return err
+
+    # Кеш (округление до 0.01 ≈ 1.1 км)
+    cache_key = (round(lat, 2), round(lon, 2))
+    if cache_key in _reverse_cache:
+        return web.json_response(_reverse_cache[cache_key])
+
+    try:
+        url = (
+            f"https://nominatim.openstreetmap.org/reverse"
+            f"?format=json&lat={lat}&lon={lon}&accept-language=ru&zoom=10"
+        )
+        headers = {"User-Agent": "BenzinRyadom/1.0 (https://t.me/benzyn_ryadom)"}
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10), headers=headers) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    addr = data.get("address", {})
+                    city = (
+                        addr.get("city")
+                        or addr.get("town")
+                        or addr.get("village")
+                        or addr.get("hamlet")
+                        or addr.get("county")
+                    )
+                    region = addr.get("state") or addr.get("region")
+                    result = {
+                        "city": city,
+                        "region": region,
+                        "country": addr.get("country"),
+                        "raw": addr,
+                    }
+                    # Кешируем
+                    if len(_reverse_cache) > 1000:
+                        _reverse_cache.clear()
+                    _reverse_cache[cache_key] = result
+                    return web.json_response(result)
+    except Exception as e:
+        pass
+
+    # Fallback: не нашли
+    return web.json_response({"city": None, "region": None, "country": None})
 
 
 async def handle_admin_stats(request):
@@ -825,6 +885,7 @@ def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     app.router.add_get("/api/health", handle_health)
     app.router.add_get("/api/admin/stats", handle_admin_stats)
+    app.router.add_get("/api/reverse-geocode", handle_reverse_geocode)
     app.router.add_get("/api/stations", handle_stations)
     app.router.add_get("/api/stations/by-city", handle_stations_by_city)
     app.router.add_get("/api/search", handle_search)

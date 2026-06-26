@@ -5,6 +5,8 @@ import WebApp from "@twa-dev/sdk";
 import {
   fetchStations,
   searchByCity,
+  fetchStationsByCity,
+  reverseGeocode,
   postReport,
   fetchPriceHistory,
   fetchStationPrices,
@@ -226,6 +228,15 @@ export default function App() {
         const loc = await getUserLocation();
         if (loc.source !== "default") {
           setCenter([loc.lat, loc.lon]);
+          // Автоопределение города
+          try {
+            const geo = await reverseGeocode(loc.lat, loc.lon);
+            if (geo.city) {
+              setCityHint(geo.city);
+            }
+          } catch {
+            // ignore
+          }
         }
         await loadStations(
           loc.source === "default" ? DEFAULT_CENTER[0] : loc.lat,

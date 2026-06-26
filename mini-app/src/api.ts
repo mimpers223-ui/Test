@@ -88,6 +88,19 @@ export async function fetchStationsByCity(
 }
 
 
+export interface ReverseGeocodeResult {
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  raw?: Record<string, string>;
+}
+
+
+export async function reverseGeocode(lat: number, lon: number): Promise<ReverseGeocodeResult> {
+  return getJson<ReverseGeocodeResult>(buildUrl("/api/reverse-geocode", { lat, lon }));
+}
+
+
 export async function fetchStationDetail(id: number): Promise<StationDetail> {
   return getJson<StationDetail>(buildUrl(`/api/stations/${id}`, {}));
 }
