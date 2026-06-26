@@ -56,12 +56,25 @@ from config import settings
 from messages import (
     WELCOME_1, WELCOME_2, WELCOME_3,
     HELP_TEXT, FIND_PROMPT, FIND_NOTHING, FIND_RESULTS_HEADER,
-    OWNER_PROMPT, MY_STATIONS_EMPTY,
-    SUBSCRIBE_PROMPT, INLINE_NO_RESULTS,
-    PREMIUM_OFFER, PREMIUM_ACTIVE, PREMIUM_TRIAL,
+    MY_STATIONS_EMPTY, SUBSCRIBE_PROMPT, INLINE_NO_RESULTS,
+    PREMIUM_OFFER, PREMIUM_ACTIVE,
+    # OWNER_PROMPT, PREMIUM_TRIAL — НЕТ в messages.py, использую inline
 )
 
 MINI_APP_URL = settings.MINI_APP_URL
+
+# Inline-фоллбэки для констант, которых нет в messages.py
+OWNER_PROMPT = (
+    "👋 <b>Привет! Я помогу стать владельцем АЗС.</b>\n\n"
+    "Введи название АЗС или отправь геолокацию:"
+)
+PREMIUM_TRIAL = (
+    "💎 <b>Пробный Premium на 7 дней бесплатно</b>\n\n"
+    "• Push без задержек\n"
+    "• Расширенный радиус (100 км)\n"
+    "• Расширенная аналитика\n\n"
+    "Активировать?"
+)
 
 
 def escape_html(s: str) -> str:
