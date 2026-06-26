@@ -151,35 +151,56 @@ class _OwnerWaitingSearchFilter(BaseFilter):
 
 # === /start — Welcome-цепочка (3 сообщения) ===
 async def cmd_start(message: Message):
-    uid = await get_or_create_user(message)
-    await log_event(uid, "bot_start")
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"cmd_start: from user {message.from_user.id if message.from_user else '?'}")
+    try:
+        uid = await get_or_create_user(message)
+        logger.info(f"cmd_start: uid={uid}")
+        await log_event(uid, "bot_start")
+    except Exception as e:
+        logger.exception(f"cmd_start: get_or_create_user failed: {e}")
+        await message.answer(f"⚠️ Ошибка при старте: {e}\nПопробуй позже или /help")
+        return
 
     first_name = message.from_user.first_name or "друг"
 
     # === Сообщение 1: Hero ===
-    hero = WELCOME_1
-    hero_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Открыть карту АЗС", web_app=WebAppInfo(url=MINI_APP_URL))],
-        [InlineKeyboardButton(text="🔍 Попробовать inline-поиск", switch_inline_query="92 Иваново")],
-        [InlineKeyboardButton(text="🏪 Я владелец АЗС", callback_data="go_register_owner")],
-    ])
-    await message.answer(hero, reply_markup=with_home_inline(hero_kb))
+    try:
+        hero = WELCOME_1
+        hero_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺 Открыть карту АЗС", web_app=WebAppInfo(url=MINI_APP_URL))],
+            [InlineKeyboardButton(text="🔍 Попробовать inline-поиск", switch_inline_query="92 Иваново")],
+            [InlineKeyboardButton(text="🏪 Я владелец АЗС", callback_data="go_register_owner")],
+        ])
+        await message.answer(hero, reply_markup=with_home_inline(hero_kb))
+    except Exception as e:
+        logger.exception(f"cmd_start: WELCOME_1 failed: {e}")
+        await message.answer(f"👋 Привет, {first_name}! /help")
+        return
 
     # === Сообщение 2: Inline-фича ===
-    inline_msg = WELCOME_2
-    inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔍 Попробовать здесь →", switch_inline_query_current_chat="95 Иваново")],
-    ])
-    await message.answer(inline_msg, reply_markup=with_home_inline(inline_kb))
+    try:
+        inline_msg = WELCOME_2
+        inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Попробовать здесь →", switch_inline_query_current_chat="95 Иваново")],
+        ])
+        await message.answer(inline_msg, reply_markup=with_home_inline(inline_kb))
+    except Exception as e:
+        logger.exception(f"cmd_start: WELCOME_2 failed: {e}")
 
     # === Сообщение 3: Crowdsource + бейджи ===
-    crowdsource = WELCOME_3
-    crowdsource_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Сообщить о наличии", web_app=WebAppInfo(url=MINI_APP_URL))],
-        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="cmd_profile"),
-         InlineKeyboardButton(text="ℹ️ Все команды", callback_data="cmd_help")],
-    ])
-    await message.answer(crowdsource, reply_markup=with_home_inline(crowdsource_kb))
+    try:
+        crowdsource = WELCOME_3
+        crowdsource_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Сообщить о наличии", web_app=WebAppInfo(url=MINI_APP_URL))],
+            [InlineKeyboardButton(text="👤 Мой профиль", callback_data="cmd_profile"),
+             InlineKeyboardButton(text="ℹ️ Все команды", callback_data="cmd_help")],
+        ])
+        await message.answer(crowdsource, reply_markup=with_home_inline(crowdsource_kb))
+    except Exception as e:
+        logger.exception(f"cmd_start: WELCOME_3 failed: {e}")
+    logger.info(f"cmd_start: done for uid={uid}")
 
 
 # === /help ===
