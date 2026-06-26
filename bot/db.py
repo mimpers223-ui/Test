@@ -50,6 +50,10 @@ async def init_db():
             max_size=20,
             command_timeout=30, # быстрее fail при проблемах
             ssl="require",
+            # Supabase free tier использует pgbouncer в Transaction mode
+            # который не поддерживает named prepared statements.
+            # statement_cache_size=0 отключает кэш → безопасно для pgbouncer.
+            statement_cache_size=0,
         )
         await _create_schema_pg(_db)
 
