@@ -102,11 +102,23 @@ async def run_bot():
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
+async def _safe_worker(coro, name: str) -> None:
+    """Обёртка для worker'а — логирует исключения, не падает."""
+    try:
+        await coro
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.exception(f"Worker {name} crashed: {e}")
+
+
 async def _run_workers(bot: Bot):
-    """Запускает push_loop и channel_loop."""
+    """Запускает push_loop и channel_loop независимо (каждый в своей задаче)."""
+    # Каждый worker в отдельной задаче с try/except — если один упадёт,
+    # второй продолжит работать, и бот НЕ ОТМЕНИТСЯ (исправляет критический баг)
     await asyncio.gather(
-        push_loop(bot),
-        channel_loop(bot),
+        _safe_worker(push_loop(bot), "push_loop"),
+        _safe_worker(channel_loop(bot), "channel_loop"),
     )
 
 
@@ -142,13 +154,9 @@ async def main():
         if settings.bot:
             workers_task = asyncio.create_task(_run_workers(settings.bot))
 
-        # Ждём сигнал остановки или ошибку
-        done, pending = await asyncio.wait(
-            [bot_task, workers_task, asyncio.create_task(stop_event.wait())],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
+        # Ждём ТОЛЬКО сигнал остановки — бот и workers продолжают
+        # работать независимо, если в worker'е exception — он не убьёт бота
+        await stop_event.wait()
     finally:
         logger.info("Останавливаюсь...")
         for t in (bot_task, workers_task):
