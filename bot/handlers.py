@@ -1700,3 +1700,4 @@ def register_all_handlers(dp: Dispatcher):
 
     # Аналитика владельца
     dp.callback_query.register(station_analytics_callback, F.data.startswith("analy:"))
+
