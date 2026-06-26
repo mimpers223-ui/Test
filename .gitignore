@@ -12,6 +12,7 @@ env/
 .env
 .env.local
 *.env.local
+.env.supabase
 bot/.env
 backend/.env
 
