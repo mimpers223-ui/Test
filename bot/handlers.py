@@ -53,6 +53,13 @@ from keyboards import (
 )
 from utils import format_distance, format_fuel_status, format_station_card
 from config import settings
+from messages import (
+    WELCOME_1, WELCOME_2, WELCOME_3,
+    HELP_TEXT, FIND_PROMPT, FIND_NOTHING, FIND_RESULTS_HEADER,
+    OWNER_PROMPT, MY_STATIONS_EMPTY,
+    SUBSCRIBE_PROMPT, INLINE_NO_RESULTS,
+    PREMIUM_OFFER, PREMIUM_ACTIVE, PREMIUM_TRIAL,
+)
 
 MINI_APP_URL = settings.MINI_APP_URL
 
