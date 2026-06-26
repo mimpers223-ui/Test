@@ -235,6 +235,12 @@ async def _fetch(sql: str, *args, one: bool = False):
                 return dict(row) if row else None
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+    async with _db.acquire() as conn:
+        if one:
+            row = await conn.fetchrow(sql, *args)
+            return dict(row) if row else None
+        rows = await conn.fetch(sql, *args)
+        return [dict(r) for r in rows]
 
 
 # === Бейджи пользователей ===
