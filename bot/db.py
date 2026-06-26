@@ -185,41 +185,40 @@ async def _create_indexes_sqlite(db):
 
 
 async def _create_schema_pg(pool):
-    """Создаёт схему в PostgreSQL."""
-    schema_path = Path(__file__).parent.parent / "db" / "schema.sql"
-    if not schema_path.exists():
-        return
-    sql = schema_path.read_text(encoding="utf-8")
+    """Создаёт минимальные таблицы в PostgreSQL (если их ещё нет).
+
+    В production (Supabase/managed PG) считаем что schema.sql уже применён
+    вручную (через Dashboard или psql). Эта функция только добавляет недостающее.
+    """
     async with pool.acquire() as conn:
-        await conn.execute(sql)
-        # Дополнительные таблицы для бейджей (если их нет в schema.sql)
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """CREATE TABLE IF NOT EXISTS user_badges (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    badge_code TEXT NOT NULL,
-                    awarded_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(user_id, badge_code)
-                )"""
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges (user_id)"
-            )
-            await conn.execute(
-                """CREATE TABLE IF NOT EXISTS premium_subscriptions (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    telegram_payment_charge_id TEXT,
-                    stars_amount INTEGER,
-                    started_at TIMESTAMPTZ DEFAULT NOW(),
-                    expires_at TIMESTAMPTZ NOT NULL,
-                    is_active BOOLEAN DEFAULT TRUE
-                )"""
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_premium_user ON premium_subscriptions (user_id) WHERE is_active"
-            )
+        # user_badges
+        await conn.execute(
+            """CREATE TABLE IF NOT EXISTS user_badges (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                badge_code TEXT NOT NULL,
+                awarded_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(user_id, badge_code)
+            )"""
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges (user_id)"
+        )
+        # premium_subscriptions
+        await conn.execute(
+            """CREATE TABLE IF NOT EXISTS premium_subscriptions (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                telegram_payment_charge_id TEXT,
+                stars_amount INTEGER,
+                started_at TIMESTAMPTZ DEFAULT NOW(),
+                expires_at TIMESTAMPTZ NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE
+            )"""
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_premium_user ON premium_subscriptions (user_id) WHERE is_active"
+        )
 
 
 # === Универсальные хелперы ===
