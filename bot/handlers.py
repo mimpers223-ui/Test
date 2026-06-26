@@ -21,7 +21,7 @@ from aiogram.types import (
     PreCheckoutQuery,
     ReplyKeyboardMarkup,
     WebAppData,
-    WebAppInfo,
+
 )
 
 from db import (
@@ -195,7 +195,7 @@ async def cmd_start(message: Message):
     try:
         crowdsource = WELCOME_3
         crowdsource_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Сообщить о наличии", web_app=WebAppInfo(url=MINI_APP_URL))],
+            [InlineKeyboardButton(text="📝 Сообщить о наличии", url=MINI_APP_URL)],
             [InlineKeyboardButton(text="👤 Мой профиль", callback_data="cmd_profile"),
              InlineKeyboardButton(text="ℹ️ Все команды", callback_data="cmd_help")],
         ])
@@ -209,7 +209,7 @@ async def cmd_start(message: Message):
 async def cmd_help(message: Message):
     text = HELP_TEXT
     await message.answer(text, reply_markup=with_home_inline(InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Открыть Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
+        [InlineKeyboardButton(text="🗺 Открыть Mini App", url=MINI_APP_URL)],
     ])))
 
 
@@ -907,7 +907,7 @@ async def station_analytics_callback(callback: CallbackQuery):
             text += f"  {c['date']}: {bar} {c['count']}\n"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Открыть на карте", web_app=WebAppInfo(url=f"{MINI_APP_URL}?station={station_id}"))],
+        [InlineKeyboardButton(text="🗺 Открыть на карте", url=f"{MINI_APP_URL}?station={station_id}")],
     ])
     await callback.message.answer(text, reply_markup=with_home_inline(kb))
 
@@ -1083,7 +1083,7 @@ async def handle_main_button(message: Message, state: FSMContext = None):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
                     text="🗺 Открыть карту",
-                    web_app=WebAppInfo(url="https://benzin-mini.vercel.app"),
+                    url="https://benzin-mini.vercel.app",
                 )],
             ]),
         )
@@ -1147,7 +1147,7 @@ async def cmd_profile(message: Message):
         text += "\n🎯 Сделай первый отчёт, чтобы получить бейдж 🥉 «Новичок»!"
 
     kb_rows = [
-        [InlineKeyboardButton(text="🗺 Открыть карту", web_app=WebAppInfo(url=MINI_APP_URL))],
+        [InlineKeyboardButton(text="🗺 Открыть карту", url=MINI_APP_URL)],
         [InlineKeyboardButton(text="🏪 Зарегистрировать АЗС", callback_data="go_register_owner")],
     ]
     if not await is_premium(uid):
@@ -1300,7 +1300,7 @@ async def _do_find(message: Message, lat: float, lon: float):
     buttons.append([
         InlineKeyboardButton(
             text="🗺 Открыть на карте",
-            web_app=WebAppInfo(url="https://benzin-mini.vercel.app"),
+            url="https://benzin-mini.vercel.app",
         )
     ])
     await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -1367,7 +1367,7 @@ async def handle_text_search(message: Message):
     buttons.append([
         InlineKeyboardButton(
             text="🗺 Открыть на карте",
-            web_app=WebAppInfo(url="https://benzin-mini.vercel.app"),
+            url="https://benzin-mini.vercel.app",
         )
     ])
     await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
