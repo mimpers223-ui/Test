@@ -9,25 +9,60 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+# === Текстовые кнопки (reply keyboard внизу экрана) ===
+BTN_FIND = "🔍 Найти АЗС"
+BTN_REPORT = "📝 Сообщить о наличии"
+BTN_SUBSCRIBE = "🔔 Подписки"
+BTN_MAP = "🗺 Открыть карту"
+BTN_PROFILE = "👤 Профиль"
+BTN_OWNER = "🏪 Владелец АЗС"
+BTN_MY_STATIONS = "📊 Мои АЗС"
+BTN_HELP = "ℹ️ Помощь"
+BTN_STATS = "📊 Статистика"
+BTN_PREMIUM = "💎 Premium"
+BTN_HOME = "🏠 В начало"
+
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Главное меню (кнопки внизу экрана)."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🔍 Найти АЗС")],
-            [KeyboardButton(text="📝 Сообщить")],
-            [KeyboardButton(text="🔔 Подписки")],
-            [
-                KeyboardButton(text="🗺 Карта"),
-                KeyboardButton(text="👤 Профиль"),
-            ],
-            [
-                KeyboardButton(text="👤 Владелец/Работник АЗС"),
-                KeyboardButton(text="📊 Мои АЗС"),
-            ],
-            [KeyboardButton(text="🏠 В начало")],
+            [KeyboardButton(text=BTN_FIND), KeyboardButton(text=BTN_MAP)],
+            [KeyboardButton(text=BTN_REPORT), KeyboardButton(text=BTN_PROFILE)],
+            [KeyboardButton(text=BTN_SUBSCRIBE), KeyboardButton(text=BTN_PREMIUM)],
+            [KeyboardButton(text=BTN_OWNER), KeyboardButton(text=BTN_MY_STATIONS)],
+            [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_HELP)],
+            [KeyboardButton(text=BTN_HOME)],
         ],
         resize_keyboard=True,
+    )
+
+
+def main_inline_keyboard() -> InlineKeyboardMarkup:
+    """Главное inline-меню (отображается в сообщении)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔍 Найти АЗС", callback_data="menu:find"),
+                InlineKeyboardButton(text="🗺 Карта", callback_data="menu:map"),
+            ],
+            [
+                InlineKeyboardButton(text="📝 Сообщить", callback_data="menu:report"),
+                InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
+            ],
+            [
+                InlineKeyboardButton(text="🔔 Подписки", callback_data="menu:subscribe"),
+                InlineKeyboardButton(text="💎 Premium", callback_data="menu:premium"),
+            ],
+            [
+                InlineKeyboardButton(text="🏪 Владелец", callback_data="menu:owner"),
+                InlineKeyboardButton(text="📊 Мои АЗС", callback_data="menu:my_stations"),
+            ],
+            [
+                InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats"),
+                InlineKeyboardButton(text="ℹ️ Помощь", callback_data="menu:help"),
+            ],
+        ],
     )
 
 

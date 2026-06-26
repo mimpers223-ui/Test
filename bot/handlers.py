@@ -47,6 +47,7 @@ from keyboards import (
     flow_keyboard,
     fuel_type_keyboard,
     main_menu_keyboard,
+    main_inline_keyboard,
     report_status_keyboard,
     station_actions_keyboard,
     with_home_inline,
@@ -188,31 +189,12 @@ async def cmd_start(message: Message):
     # === Сообщение 1: Hero ===
     try:
         hero = WELCOME_1
-        # НЕ используем web_app — он требует валидный URL и HTTPS
-        # Используем обычную URL-кнопку (откроет в браузере)
-        hero_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗺 Открыть карту АЗС", url=MINI_APP_URL)],
-            [InlineKeyboardButton(text="🔍 Попробовать inline-поиск", switch_inline_query="92 Иваново")],
-            [InlineKeyboardButton(text="🏪 Я владелец АЗС", callback_data="go_register_owner")],
-        ])
-        try:
-            hero_kb_with_home = with_home_inline(hero_kb)
-        except Exception as kb_err:
-            logger.exception(f"with_home_inline failed: {kb_err}")
-            hero_kb_with_home = None
-        await message.answer(hero, reply_markup=hero_kb_with_home)
+        # Inline-меню со всеми действиями
+        hero_kb = main_inline_keyboard()
+        await message.answer(hero, reply_markup=hero_kb)
     except Exception as e:
         logger.exception(f"cmd_start: WELCOME_1 failed: {e}")
-        import traceback
-        tb = traceback.format_exc()
-        # Покажем пользователю короткую ошибку + отправим админу полный traceback
-        await message.answer(f"👋 Привет, {first_name}!\n\n⚠️ Ошибка hero: {type(e).__name__}\n/help")
-        # Админу — полный traceback
-        if settings.is_admin(username=message.from_user.username if message.from_user else None):
-            try:
-                await message.answer(f"<pre>{tb[:2000]}</pre>")
-            except Exception:
-                pass
+        await message.answer(f"👋 Привет, {first_name}! /help", reply_markup=main_menu_keyboard())
         return
 
     # === Сообщение 2: Inline-фича ===
@@ -236,6 +218,17 @@ async def cmd_start(message: Message):
         await message.answer(crowdsource, reply_markup=with_home_inline(crowdsource_kb))
     except Exception as e:
         logger.exception(f"cmd_start: WELCOME_3 failed: {e}")
+
+    # === Главное меню (reply-клавиатура внизу) ===
+    try:
+        await message.answer(
+            "👇 <b>Главное меню:</b> нажимай кнопки внизу — "
+            "они остаются видимыми после каждого ответа.",
+            reply_markup=main_menu_keyboard(),
+        )
+    except Exception as e:
+        logger.exception(f"cmd_start: main_menu failed: {e}")
+
     logger.info(f"cmd_start: done for uid={uid}")
 
 
@@ -1088,58 +1081,55 @@ async def inline_search(inline_query: InlineQuery):
     await inline_query.answer(results, cache_time=30, is_personal=False)
 
 
-# === handle_main_button — обновляем под новые кнопки ===
+# === handle_main_button — текстовые кнопки (reply keyboard) ===
 async def handle_main_button(message: Message, state: FSMContext = None):
+    """Обрабатывает нажатия на кнопки reply-клавиатуры (внизу чата)."""
     text = (message.text or "").strip()
 
     # Сначала — глобальный «В начало»
-    if text == "🏠 В начало":
+    if text == "🏠 В начало" or text == BTN_HOME:
         await go_home_text(message, state)
         return
 
-    if text == "🔍 Найти АЗС":
+    if text == BTN_FIND or text == "🔍 Найти АЗС":
         await cmd_find(message)
-    elif text == "📝 Сообщить":
+    elif text == BTN_REPORT or text == "📝 Сообщить":
         await message.answer(
             "📝 <b>Сообщить о наличии топлива</b>\n\n"
             "Открой карточку АЗС через «🔍 Найти АЗС», затем нажми «📝 Сообщить».",
             reply_markup=main_menu_keyboard(),
         )
-    elif text == "🔔 Подписки":
-        await message.answer(
-            "🔔 <b>Подписки на уведомления</b>\n\n"
-            "Отправь команду /subscribe и геолокацию — буду присылать алерты о завозе.",
-            reply_markup=main_menu_keyboard(),
-        )
-    elif text == "🗺 Карта":
-        await message.answer(
-            "🗺 Открой карту в Mini App:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="🗺 Открыть карту",
-                    url="https://benzin-mini.vercel.app",
-                )],
-            ]),
-        )
-    elif text == "👤 Профиль":
+    elif text == BTN_SUBSCRIBE or text == "🔔 Подписки":
+        await cmd_subscribe(message, state)
+    elif text == BTN_MAP or text == "🗺 Карта" or text == "🗺 Открыть карту":
+        await open_map(message)
+    elif text == BTN_PROFILE or text == "👤 Профиль":
         await cmd_profile(message)
-    elif text in ("👤 Я владелец", "Я владелец", "👤 Я владелец/работник АЗС",
-                  "👤 Владелец/Работник АЗС", "Владелец/Работник АЗС"):
-        # Помечаем, что от этого юзера ждём текстовый ввод
-        _waiting_owner_search.add(_tg_id(message))
-        await message.answer(
-            "👤 <b>Регистрация владельца или работника АЗС.</b>\n\n"
-            "<b>Можно регистрироваться и владельцу, и работнику заправки</b> — "
-            "обоим мы даём возможность одной кнопкой обновлять статус топлива.\n\n"
-            "📝 <b>Введи название, адрес или город</b> АЗС, где ты работаешь.\n\n"
-            "<i>Например: <code>Лукойл Иваново</code>, <code>Ленина 45</code>, "
-            "<code>Газпром Шуя</code>.</i>",
-            reply_markup=flow_keyboard(),
-        )
-    elif text in ("📊 Мои АЗС", "Мои АЗС"):
+    elif text == BTN_OWNER or text in ("👤 Я владелец", "Я владелец",
+                                      "👤 Владелец/Работник АЗС", "Владелец/Работник АЗС"):
+        await cmd_register_owner(message, state)
+    elif text == BTN_MY_STATIONS or text in ("📊 Мои АЗС", "Мои АЗС"):
         await cmd_my_stations(message)
+    elif text == BTN_STATS or text == "📊 Статистика":
+        await cmd_stats(message)
+    elif text == BTN_PREMIUM or text == "💎 Premium":
+        await cmd_premium(message)
+    elif text == BTN_HELP or text == "ℹ️ Помощь" or text == "/help":
+        await cmd_help(message)
     else:
         await handle_text_search(message)
+
+
+async def open_map(message: Message):
+    """Открывает Mini App с картой."""
+    await message.answer(
+        f"🗺 <b>Открой карту в Mini App:</b>\n\n"
+        f"Все {26515:,} АЗС с фильтрами по сети, цене и наличию.\n"
+        f"💎 Premium: радиус до 100 км, push без задержек.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺 Открыть карту", url=MINI_APP_URL)],
+        ]),
+    )
 
 
 # === /profile ===
@@ -1200,6 +1190,42 @@ async def profile_callback(callback: CallbackQuery):
 async def help_callback(callback: CallbackQuery):
     await callback.answer()
     await cmd_help(callback.message)
+
+
+# === menu:* — inline-меню (callback handlers) ===
+async def menu_callback(callback: CallbackQuery):
+    """Обрабатывает нажатия на кнопки главного inline-меню."""
+    await callback.answer()
+    data = callback.data or ""
+    action = data.split(":", 1)[1] if ":" in data else ""
+
+    # Создаём fake message объект из callback.message
+    msg = callback.message
+
+    if action == "find":
+        await cmd_find(msg)
+    elif action == "map":
+        await open_map(msg)
+    elif action == "report":
+        await msg.answer(
+            "📝 <b>Сообщить о наличии топлива</b>\n\n"
+            "Открой карточку АЗС через «🔍 Найти АЗС», затем нажми «📝 Сообщить».",
+            reply_markup=main_menu_keyboard(),
+        )
+    elif action == "profile":
+        await cmd_profile(msg)
+    elif action == "subscribe":
+        await cmd_subscribe(msg, None)
+    elif action == "premium":
+        await cmd_premium(msg)
+    elif action == "owner":
+        await cmd_register_owner(msg, None)
+    elif action == "my_stations":
+        await cmd_my_stations(msg)
+    elif action == "stats":
+        await cmd_stats(msg)
+    elif action == "help":
+        await cmd_help(msg)
 
 
 # === premium callback (из /profile) ===
@@ -1699,6 +1725,7 @@ def register_all_handlers(dp: Dispatcher):
     dp.callback_query.register(go_register_owner_callback, F.data == "go_register_owner")
     dp.callback_query.register(profile_callback, F.data == "cmd_profile")
     dp.callback_query.register(help_callback, F.data == "cmd_help")
+    dp.callback_query.register(menu_callback, F.data.startswith("menu:"))
 
     # === Premium (Telegram Stars) ===
     dp.message.register(cmd_premium, Command("premium"))
