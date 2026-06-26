@@ -1244,7 +1244,7 @@ async def get_best_price_for_station(
 
     Учитывает все источники, отдаёт отчёт с максимальным weighted_score.
     """
-    if db.USE_SQLITE:
+    if USE_SQLITE:
         cur = await _db.execute(
             """SELECT id, fuel_type, available, price, source, confidence, created_at
                FROM reports
@@ -1306,7 +1306,7 @@ async def get_all_prices_for_station(station_id: int) -> dict:
 
     Формат: {fuel_type: [{source, price, age_hours, confidence, weighted_score, is_best}]}
     """
-    if db.USE_SQLITE:
+    if USE_SQLITE:
         cur = await _db.execute(
             """SELECT id, fuel_type, available, price, source, confidence, created_at
                FROM reports
