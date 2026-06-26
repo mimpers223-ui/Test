@@ -1166,7 +1166,40 @@ async def cmd_stats(message: Message):
         f"⛽ АЗС в базе: <b>{stats.get('stations_count', 0):,}</b>\n"
         f"👥 Пользователей: <b>{stats.get('users_count', 0):,}</b>\n"
         f"📝 Отчётов за 24ч: <b>{stats.get('reports_24h', 0):,}</b>\n"
-        f"🏙 Городов: <b>{stats.get('cities_count', 0)}</b>"
+        f"🏙 Городов: <b>{stats.get('cities_count', 0)}</b>\n"
+    )
+
+    # === Источники (мониторинг) ===
+    try:
+        sources = await db._fetch("""
+            SELECT source,
+                   COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 hour') as h1,
+                   COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') as h24,
+                   COUNT(*) as total,
+                   MAX(created_at) as last_update
+            FROM reports
+            GROUP BY source
+            ORDER BY total DESC
+        """)
+        if sources:
+            text += "\n<b>📡 Источники:</b>\n"
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            for s in sources:
+                hours = (now - s["last_update"]).total_seconds() / 3600
+                status = "✅" if hours < 1 else ("🟡" if hours < 6 else "🔴")
+                text += (
+                    f"  {status} <code>{s['source']}</code>: "
+                    f"{s['h24']}/24h, {s['total']} всего\n"
+                )
+    except Exception as e:
+        text += f"\n⚠ Ошибка источников: {e}\n"
+
+    text += (
+        "\n🔗 <b>API:</b>\n"
+        "  /api/health — health check\n"
+        "  /api/admin/stats — статистика\n"
+        "  /api/stations/by-city — поиск по городу"
     )
     await message.answer(text)
 
