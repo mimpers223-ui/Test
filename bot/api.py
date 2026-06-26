@@ -427,6 +427,8 @@ async def handle_station_prices(request):
     all_prices = await get_all_prices_for_station(station_id)
 
     # Форматируем для Mini App
+    from datetime import datetime, date
+    from decimal import Decimal
     fuel_prices = {}
     sources_summary = {}
     for fuel, items in all_prices.items():
@@ -434,22 +436,30 @@ async def handle_station_prices(request):
             continue
         # Лучший — items[0] (отсортированы по weighted_score)
         best = items[0]
+
+        def _to_jsonable(v):
+            if isinstance(v, (datetime, date)):
+                return v.isoformat()
+            if isinstance(v, Decimal):
+                return float(v)
+            return v
+
         fuel_prices[fuel] = {
             "best": {
                 "source": best.get("source"),
-                "price": best.get("price"),
-                "confidence": best.get("weighted_score"),
-                "age_hours": best.get("age_hours"),
-                "updated_at": best.get("created_at"),
+                "price": _to_jsonable(best.get("price")),
+                "confidence": _to_jsonable(best.get("weighted_score")),
+                "age_hours": _to_jsonable(best.get("age_hours")),
+                "updated_at": _to_jsonable(best.get("created_at")),
             },
             "all": [
                 {
                     "source": it.get("source"),
-                    "price": it.get("price"),
+                    "price": _to_jsonable(it.get("price")),
                     "is_best": it.get("is_best", False),
-                    "confidence": it.get("weighted_score"),
-                    "age_hours": it.get("age_hours"),
-                    "updated_at": it.get("created_at"),
+                    "confidence": _to_jsonable(it.get("weighted_score")),
+                    "age_hours": _to_jsonable(it.get("age_hours")),
+                    "updated_at": _to_jsonable(it.get("created_at")),
                 }
                 for it in items[:5]  # максимум 5 источников
             ],
