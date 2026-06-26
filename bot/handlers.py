@@ -168,8 +168,10 @@ async def cmd_start(message: Message):
     # === Сообщение 1: Hero ===
     try:
         hero = WELCOME_1
+        # НЕ используем web_app — он требует валидный URL и HTTPS
+        # Используем обычную URL-кнопку (откроет в браузере)
         hero_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗺 Открыть карту АЗС", web_app=WebAppInfo(url=MINI_APP_URL))],
+            [InlineKeyboardButton(text="🗺 Открыть карту АЗС", url=MINI_APP_URL)],
             [InlineKeyboardButton(text="🔍 Попробовать inline-поиск", switch_inline_query="92 Иваново")],
             [InlineKeyboardButton(text="🏪 Я владелец АЗС", callback_data="go_register_owner")],
         ])
