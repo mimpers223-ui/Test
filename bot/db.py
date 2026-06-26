@@ -225,6 +225,18 @@ async def _create_schema_pg(pool):
         )
 
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_connection():
+    """Async context manager: yield connection (aiosqlite или asyncpg)."""
+    if USE_SQLITE:
+        yield _db
+    else:
+        async with _db.acquire() as conn:
+            yield conn
+
+
 # === Универсальные хелперы ===
 async def _fetch(sql: str, *args, one: bool = False):
     """Универсальный fetch. Возвращает dict (SQLite) или list[dict] (PostgreSQL)."""
