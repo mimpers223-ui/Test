@@ -1084,7 +1084,10 @@ async def inline_search(inline_query: InlineQuery):
 # === handle_main_button — текстовые кнопки (reply keyboard) ===
 async def handle_main_button(message: Message, state: FSMContext = None):
     """Обрабатывает нажатия на кнопки reply-клавиатуры (внизу чата)."""
+    import logging
+    logger = logging.getLogger(__name__)
     text = (message.text or "").strip()
+    logger.info(f"handle_main_button: text={text!r}")
 
     # Сначала — глобальный «В начало»
     if text == "🏠 В начало" or text == BTN_HOME:
@@ -1195,37 +1198,52 @@ async def help_callback(callback: CallbackQuery):
 # === menu:* — inline-меню (callback handlers) ===
 async def menu_callback(callback: CallbackQuery):
     """Обрабатывает нажатия на кнопки главного inline-меню."""
-    await callback.answer()
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"menu_callback: data={callback.data}")
+    try:
+        await callback.answer()
+    except Exception as e:
+        logger.exception(f"menu_callback: answer failed: {e}")
+
     data = callback.data or ""
     action = data.split(":", 1)[1] if ":" in data else ""
-
-    # Создаём fake message объект из callback.message
     msg = callback.message
 
-    if action == "find":
-        await cmd_find(msg)
-    elif action == "map":
-        await open_map(msg)
-    elif action == "report":
-        await msg.answer(
-            "📝 <b>Сообщить о наличии топлива</b>\n\n"
-            "Открой карточку АЗС через «🔍 Найти АЗС», затем нажми «📝 Сообщить».",
-            reply_markup=main_menu_keyboard(),
-        )
-    elif action == "profile":
-        await cmd_profile(msg)
-    elif action == "subscribe":
-        await cmd_subscribe(msg, None)
-    elif action == "premium":
-        await cmd_premium(msg)
-    elif action == "owner":
-        await cmd_register_owner(msg, None)
-    elif action == "my_stations":
-        await cmd_my_stations(msg)
-    elif action == "stats":
-        await cmd_stats(msg)
-    elif action == "help":
-        await cmd_help(msg)
+    try:
+        if action == "find":
+            await cmd_find(msg)
+        elif action == "map":
+            await open_map(msg)
+        elif action == "report":
+            await msg.answer(
+                "📝 <b>Сообщить о наличии топлива</b>\n\n"
+                "Открой карточку АЗС через «🔍 Найти АЗС», затем нажми «📝 Сообщить».",
+                reply_markup=main_menu_keyboard(),
+            )
+        elif action == "profile":
+            await cmd_profile(msg)
+        elif action == "subscribe":
+            await cmd_subscribe(msg, None)
+        elif action == "premium":
+            await cmd_premium(msg)
+        elif action == "owner":
+            await cmd_register_owner(msg, None)
+        elif action == "my_stations":
+            await cmd_my_stations(msg)
+        elif action == "stats":
+            await cmd_stats(msg)
+        elif action == "help":
+            await cmd_help(msg)
+        else:
+            await msg.answer(f"❓ Неизвестное действие: {action}", reply_markup=main_menu_keyboard())
+        logger.info(f"menu_callback: action={action} done")
+    except Exception as e:
+        logger.exception(f"menu_callback: action={action} failed: {e}")
+        try:
+            await msg.answer(f"⚠️ Ошибка: {e}", reply_markup=main_menu_keyboard())
+        except Exception:
+            pass
 
 
 # === premium callback (из /profile) ===
