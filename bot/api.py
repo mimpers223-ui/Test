@@ -7,6 +7,7 @@ import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from aiohttp import web
@@ -105,6 +106,33 @@ def _parse_float(request, name: str, min_val: float, max_val: float) -> tuple[fl
 # === Handlers ===
 async def handle_health(request):
     return web.json_response({"status": "ok"})
+
+
+async def handle_logs(request):
+    """GET /api/logs?lines=50 — последние строки bot.log (для отладки)."""
+    log_path = Path(__file__).parent / "bot.log"
+    if not log_path.exists():
+        return web.json_response({"error": "no log file"}, status=404)
+    try:
+        lines = int(request.query.get("lines", "50"))
+        lines = max(1, min(lines, 500))
+    except (ValueError, TypeError):
+        lines = 50
+    try:
+        # Читаем последние N строк
+        with open(log_path, "rb") as f:
+            content = f.read()
+        text = content.decode("utf-8", errors="ignore")
+        all_lines = text.splitlines()
+        last = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        return web.json_response({
+            "path": str(log_path),
+            "total_lines": len(all_lines),
+            "shown": len(last),
+            "lines": last,
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 
 # === Кеш reverse geocoding (city по координатам) ===
@@ -884,6 +912,7 @@ async def cors_middleware(app, handler):
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     app.router.add_get("/api/health", handle_health)
+    app.router.add_get("/api/logs", handle_logs)
     app.router.add_get("/api/admin/stats", handle_admin_stats)
     app.router.add_get("/api/reverse-geocode", handle_reverse_geocode)
     app.router.add_get("/api/stations", handle_stations)
