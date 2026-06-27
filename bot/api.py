@@ -316,11 +316,15 @@ async def handle_stations(request):
     for s in stations:
         sid = s["id"]
         statuses = statuses_by_station.get(sid, [])
+        # Если operator пустой — используем name (многие АЗС имеют только name)
+        operator = s.get("operator") or s.get("name")
+        # Если city пустой — оставляем пустым
         result.append({
             "id": sid,
             "name": s.get("name"),
-            "operator": s.get("operator"),
+            "operator": operator,
             "city": s.get("city"),
+            "address": s.get("address") or "",
             "lat": s.get("lat"),
             "lon": s.get("lon"),
             "distance_km": s.get("distance_km"),
