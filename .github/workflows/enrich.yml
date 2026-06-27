@@ -1,8 +1,9 @@
 name: Enrich Addresses (Nominatim)
 
-# Каждые 6 часов обогащает 500 АЗС адресами через Nominatim.
-# Бесплатно (GitHub Actions Free: 2000 мин/мес).
-# Использует secrets: DATABASE_URL.
+# Обогащение адресов через Nominatim.
+# Запускается:
+#   - По расписанию (каждые 6ч, 500 АЗС)
+#   - Вручную с параметрами
 
 on:
   schedule:
@@ -14,11 +15,19 @@ on:
         description: "Лимит АЗС (по умолчанию 500)"
         required: false
         default: "500"
+      city:
+        description: "Фильтр по городу (например: Иваново, Москва)"
+        required: false
+        default: ""
+      rate:
+        description: "Запросов в секунду (макс 1 для Nominatim free)"
+        required: false
+        default: "1.0"
 
 jobs:
   enrich:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,11 +35,13 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install deps
-        run: |
-          pip install aiohttp aiosqlite asyncpg python-dotenv certifi
+        run: pip install aiohttp aiosqlite asyncpg python-dotenv certifi
       - name: Run enrich
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           USE_SQLITE: "false"
         run: |
-          python scripts/enrich_addresses.py --limit ${{ github.event.inputs.limit || '500' }} --rate 1.0
+          python scripts/enrich_addresses.py \
+            --limit ${{ github.event.inputs.limit || '500' }} \
+            --rate ${{ github.event.inputs.rate || '1.0' }} \
+            ${{ github.event.inputs.city && format('--city {0}', github.event.inputs.city) || '' }}

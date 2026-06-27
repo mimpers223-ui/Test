@@ -1,0 +1,36 @@
+name: Enrich Ivanovo (priority)
+
+# ПРИОРИТЕТНЫЙ обход АЗС Иваново (и соседних городов) через Nominatim.
+# Запускается по запросу (manual).
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Лимит АЗС"
+        required: false
+        default: "2000"
+
+jobs:
+  enrich-ivanovo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: pip install aiohttp aiosqlite asyncpg python-dotenv certifi
+      - name: Enrich Иваново
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          USE_SQLITE: "false"
+        run: |
+          # Приоритет: Иваново → Кострома → Ярославль → Владимир → Тула
+          for city in "Иваново" "Кострома" "Ярославль" "Владимир" "Тула"; do
+            echo "=== $city ==="
+            python scripts/enrich_addresses.py --city "$city" --limit 500 --rate 1.0 || true
+            sleep 5
+          done

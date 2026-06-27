@@ -55,25 +55,55 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=1000, help="Лимит АЗС")
     parser.add_argument("--rate", type=float, default=1.1, help="Запросов/сек")
+    parser.add_argument("--city", help="Фильтр по городу (LIKE): 'Иваново', 'Москва' и т.д.")
+    parser.add_argument("--region", help="Фильтр по региону")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     print(f"=== Обогащение адресов (Nominatim) ===")
     print(f"Лимит: {args.limit}, rate: {args.rate} req/s")
+    if args.city:
+        print(f"Фильтр по городу: {args.city}")
+    if args.region:
+        print(f"Фильтр по региону: {args.region}")
 
     if not args.dry_run:
         await db.init_db()
 
     # Загружаем АЗС без адреса
-    rows = await db._fetch(f"""
+    where = """
+        lat IS NOT NULL
+        AND lon IS NOT NULL
+        AND (address IS NULL OR address = '')
+    """
+    params = []
+    if args.city:
+        where += " AND (LOWER(city) LIKE $1 OR LOWER(name) LIKE $1)"
+        params.append(f"%{args.city.lower()}%")
+    if args.region:
+        where += f" AND LOWER(region) LIKE ${len(params) + 1}"
+        params.append(f"%{args.region.lower()}%")
+
+    query = f"""
         SELECT id, name, lat, lon
         FROM stations
-        WHERE lat IS NOT NULL
-          AND lon IS NOT NULL
-          AND (address IS NULL OR address = '')
-        ORDER BY id
+        WHERE {where}
+        ORDER BY
+          CASE WHEN LOWER(city) LIKE $1 THEN 0 ELSE 1 END,  -- сначала по городу
+          id
         LIMIT {args.limit}
-    """)
+    """
+    if not args.city and not args.region:
+        query = f"""
+            SELECT id, name, lat, lon
+            FROM stations
+            WHERE {where}
+            ORDER BY id
+            LIMIT {args.limit}
+        """
+        params = []
+
+    rows = await db._fetch(query, *params)
     print(f"Найдено АЗС без адреса: {len(rows)}")
 
     if not rows:
@@ -126,21 +156,35 @@ async def main():
             )
 
             if not args.dry_run:
-                try:
-                    await db._execute(
-                        """
-                        UPDATE stations
-                        SET address = $1, city = COALESCE(NULLIF($2, ''), city), region = COALESCE(NULLIF($3, ''), region)
-                        WHERE id = $4
-                        """,
-                        full_address, city, region, sid,
-                    )
+                success = False
+                for attempt in range(3):  # 3 попытки
+                    try:
+                        await db._execute(
+                            """
+                            UPDATE stations
+                            SET address = $1, city = COALESCE(NULLIF($2, ''), city), region = COALESCE(NULLIF($3, ''), region)
+                            WHERE id = $4
+                            """,
+                            full_address, city, region, sid,
+                        )
+                        success = True
+                        break
+                    except Exception as e:
+                        if attempt < 2:
+                            await asyncio.sleep(2)
+                            # Переинициализация pool
+                            try:
+                                await db.close_db()
+                                await db.init_db()
+                            except Exception:
+                                pass
+                        else:
+                            errors += 1
+                            print(f"  ⚠ Update {sid}: {e}")
+                if success:
                     updated += 1
                     if updated % 50 == 0:
                         print(f"  Обновлено: {updated}/{len(rows)} (errors: {errors})")
-                except Exception as e:
-                    errors += 1
-                    print(f"  ⚠ Update {sid}: {e}")
 
             await asyncio.sleep(delay)
 
