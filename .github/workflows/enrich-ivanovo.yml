@@ -1,20 +1,29 @@
-name: Enrich Ivanovo (priority)
+name: Enrich Ivanovo + 4 cities (priority)
 
-# ПРИОРИТЕТНЫЙ обход АЗС Иваново (и соседних городов) через Nominatim.
-# Запускается по запросу (manual).
+# ПРИОРИТЕТНЫЙ обход АЗС Иваново и соседних городов через Nominatim.
+# Запускается:
+#   - По расписанию (раз в день в 04:00 UTC)
+#   - Вручную с параметрами
 
 on:
+  schedule:
+    # Каждый день в 04:00 UTC (после full-update в 02:00)
+    - cron: "0 4 * * *"
   workflow_dispatch:
     inputs:
+      bbox:
+        description: "Bbox: 'lat_min,lat_max,lon_min,lon_max'"
+        required: false
+        default: "56.5,57.5,39.0,43.0"
       limit:
         description: "Лимит АЗС"
         required: false
-        default: "2000"
+        default: "200"
 
 jobs:
   enrich-ivanovo:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,14 +32,14 @@ jobs:
           cache: pip
       - name: Install deps
         run: pip install aiohttp aiosqlite asyncpg python-dotenv certifi
-      - name: Enrich Иваново
+      - name: Enrich bbox
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           USE_SQLITE: "false"
         run: |
-          # Приоритет: Иваново → Кострома → Ярославль → Владимир → Тула
-          for city in "Иваново" "Кострома" "Ярославль" "Владимир" "Тула"; do
-            echo "=== $city ==="
-            python scripts/enrich_addresses.py --city "$city" --limit 500 --rate 1.0 || true
+          # Приоритет: bbox Иваново + соседние (Ярославль, Кострома, Владимир)
+          for bbox in "56.5,57.5,39.0,43.0" "57.0,58.5,38.0,41.0" "57.0,59.0,40.0,46.0" "55.5,56.8,38.0,42.0"; do
+            echo "=== bbox: $bbox ==="
+            python scripts/enrich_addresses.py --bbox "$bbox" --limit ${{ github.event.inputs.limit || '200' }} --rate 1.0 || true
             sleep 5
           done

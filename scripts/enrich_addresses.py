@@ -57,6 +57,7 @@ async def main():
     parser.add_argument("--rate", type=float, default=1.1, help="Запросов/сек")
     parser.add_argument("--city", help="Фильтр по городу (LIKE): 'Иваново', 'Москва' и т.д.")
     parser.add_argument("--region", help="Фильтр по региону")
+    parser.add_argument("--bbox", help="Bbox фильтр: 'lat_min,lat_max,lon_min,lon_max'")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -66,42 +67,49 @@ async def main():
         print(f"Фильтр по городу: {args.city}")
     if args.region:
         print(f"Фильтр по региону: {args.region}")
+    if args.bbox:
+        print(f"Фильтр по bbox: {args.bbox}")
 
     if not args.dry_run:
         await db.init_db()
 
     # Загружаем АЗС без адреса
-    where = """
-        lat IS NOT NULL
-        AND lon IS NOT NULL
-        AND (address IS NULL OR address = '')
-    """
+    where = [
+        "lat IS NOT NULL",
+        "lon IS NOT NULL",
+        "(address IS NULL OR address = '')",
+    ]
     params = []
     if args.city:
-        where += " AND (LOWER(city) LIKE $1 OR LOWER(name) LIKE $1)"
+        idx = len(params) + 1
+        where.append(f"(LOWER(city) LIKE ${idx} OR LOWER(name) LIKE ${idx})")
         params.append(f"%{args.city.lower()}%")
     if args.region:
-        where += f" AND LOWER(region) LIKE ${len(params) + 1}"
+        idx = len(params) + 1
+        where.append(f"LOWER(region) LIKE ${idx}")
         params.append(f"%{args.region.lower()}%")
+    if args.bbox:
+        # bbox: lat_min,lat_max,lon_min,lon_max
+        try:
+            lat_min, lat_max, lon_min, lon_max = map(float, args.bbox.split(","))
+        except ValueError:
+            print(f"❌ Неправильный bbox: {args.bbox}")
+            return 1
+        idx = len(params) + 1
+        where.append(f"lat BETWEEN ${idx} AND ${idx+1}")
+        params.extend([lat_min, lat_max])
+        idx = len(params) + 1
+        where.append(f"lon BETWEEN ${idx} AND ${idx+1}")
+        params.extend([lon_min, lon_max])
 
+    where_str = " AND ".join(where)
     query = f"""
         SELECT id, name, lat, lon
         FROM stations
-        WHERE {where}
-        ORDER BY
-          CASE WHEN LOWER(city) LIKE $1 THEN 0 ELSE 1 END,  -- сначала по городу
-          id
+        WHERE {where_str}
+        ORDER BY id
         LIMIT {args.limit}
     """
-    if not args.city and not args.region:
-        query = f"""
-            SELECT id, name, lat, lon
-            FROM stations
-            WHERE {where}
-            ORDER BY id
-            LIMIT {args.limit}
-        """
-        params = []
 
     rows = await db._fetch(query, *params)
     print(f"Найдено АЗС без адреса: {len(rows)}")
