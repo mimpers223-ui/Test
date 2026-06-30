@@ -215,6 +215,12 @@ async def _create_schema_pg(pool):
     вручную (через Dashboard или psql). Эта функция только добавляет недостающее.
     """
     async with pool.acquire() as conn:
+        # Миграция: добавляем недостающие колонки
+        try:
+            await conn.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS next_delivery_at TIMESTAMPTZ")
+        except Exception as e:
+            logger.warning(f"PG migration next_delivery_at: {e}")
+
         # user_badges
         await conn.execute(
             """CREATE TABLE IF NOT EXISTS user_badges (
