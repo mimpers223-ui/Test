@@ -51,6 +51,9 @@ from keyboards import (
     report_status_keyboard,
     station_actions_keyboard,
     with_home_inline,
+    city_keyboard,
+    price_filter_keyboard,
+    network_filter_keyboard,
     BTN_FIND, BTN_REPORT, BTN_SUBSCRIBE, BTN_MAP, BTN_PROFILE,
     BTN_OWNER, BTN_MY_STATIONS, BTN_HELP, BTN_STATS, BTN_PREMIUM, BTN_HOME,
 )
@@ -1221,6 +1224,15 @@ async def menu_callback(callback: CallbackQuery):
     try:
         if action == "find":
             await cmd_find(msg)
+        elif action == "city":
+            await msg.answer(
+                "📍 <b>Выбери населённый пункт</b>\n\n"
+                "Иваново, Москва, СПб, и другие. "
+                "Или напиши свой город в сообщении — бот найдёт АЗС.",
+                reply_markup=city_keyboard(),
+            )
+        elif action == "emergency":
+            await emergency_handler(msg)
         elif action == "map":
             await open_map(msg)
         elif action == "report":
@@ -1252,6 +1264,212 @@ async def menu_callback(callback: CallbackQuery):
             await msg.answer(f"⚠️ Ошибка: {e}", reply_markup=main_menu_keyboard())
         except Exception:
             pass
+
+
+# === city:* — выбор города (callback handlers) ===
+async def city_callback(callback: CallbackQuery):
+    """Обрабатывает выбор города."""
+    await callback.answer()
+    data = callback.data or ""
+    city_name = data.split(":", 1)[1] if ":" in data else ""
+    msg = callback.message
+
+    if city_name == "other":
+        await msg.answer(
+            "✏️ <b>Напиши название города</b> в сообщении:\n\n"
+            "Например: <code>Иваново</code>, <code>Москва</code>, <code>Краснодар</code>",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    # Сохраняем выбор в state (если нужно) — пока просто показываем результат
+    await show_city_results(msg, city_name)
+
+
+# === show_city_results — поиск АЗС по городу с фильтрами ===
+async def show_city_results(msg, city: str, fuel: str = "92", max_price: float = None, network: str = None):
+    """Показывает АЗС в городе с фильтрами."""
+    # Сначала фильтр по цене
+    if max_price is None and network is None:
+        # Показываем inline-клавиатуру с фильтрами
+        kb_rows = [
+            [InlineKeyboardButton(text="⛽ АИ-92", callback_data=f"fuel:{city}:92"),
+             InlineKeyboardButton(text="⛽ АИ-95", callback_data=f"fuel:{city}:95")],
+            [InlineKeyboardButton(text="⛽ АИ-98", callback_data=f"fuel:{city}:98"),
+             InlineKeyboardButton(text="🛢 Дизель", callback_data=f"fuel:{city}:diesel")],
+            [InlineKeyboardButton(text="💰 Фильтр по цене", callback_data=f"price_menu:{city}")],
+            [InlineKeyboardButton(text="⛽ Фильтр по сети", callback_data=f"net_menu:{city}")],
+            [InlineKeyboardButton(text="🚨 Экстренный (любая цена/сеть)", callback_data=f"emergency:{city}")],
+        ]
+        await msg.answer(
+            f"📍 <b>{city}</b>\n\n"
+            f"Выбери тип топлива или фильтры:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        )
+    else:
+        # Показываем АЗС с фильтрами
+        try:
+            stations = await db.find_stations_by_city(
+                city=city, fuel_type=fuel, network=network,
+                max_price=max_price, has_stock=False, limit=20,
+            )
+            if not stations:
+                await msg.answer(
+                    f"🔍 <b>АЗС не найдены</b> в {city}\n"
+                    f"Фильтры: топливо={fuel}, цена до {max_price}, сеть={network or 'любая'}",
+                    reply_markup=main_menu_keyboard(),
+                )
+                return
+
+            # Сортируем по наличию данных
+            lines = [f"⛽ <b>{city}</b> — найдено {len(stations)} АЗС\n"]
+            for i, s in enumerate(stations[:10], 1):
+                name = s.get("name", "АЗС")[:30]
+                operator = s.get("operator") or ""
+                lines.append(f"{i}. <b>{name}</b>" + (f" ({operator})" if operator and operator != name else ""))
+
+            kb = [[InlineKeyboardButton(text="🗺 Открыть в Mini App", url=f"{MINI_APP_URL}?city={city}&fuel={fuel}")]]
+            if max_price:
+                kb[0].append(InlineKeyboardButton(text="🚨 Без фильтра цены", callback_data=f"emergency:{city}"))
+
+            await msg.answer(
+                "\n".join(lines) + "\n\n💡 Подробности в Mini App (с ценами и наличием).",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            )
+        except Exception as e:
+            await msg.answer(f"⚠️ Ошибка: {e}", reply_markup=main_menu_keyboard())
+
+
+# === emergency_handler — ближайшая АЗС с ТОПЛИВОМ (без фильтров) ===
+async def emergency_handler(msg, city: str = None):
+    """Экстренный режим — ближайшая АЗС с подтверждённым наличием топлива.
+
+    Игнорирует цену, сеть, очередь. Только наличие.
+    """
+    # Если город не указан — спрашиваем
+    if not city:
+        await msg.answer(
+            "🚨 <b>Экстренный режим</b>\n\n"
+            "Найдём ближайшую АЗС с подтверждённым наличием бензина.\n"
+            "Без фильтров по цене, сети, очереди.\n\n"
+            "📍 Выбери город:",
+            reply_markup=city_keyboard(),
+        )
+        return
+
+    # Ищем АЗС в городе с подтверждённым наличием
+    try:
+        stations = await db.find_stations_by_city(
+            city=city, fuel_type=None, network=None,
+            max_price=None, has_stock=True, limit=20,
+        )
+        if not stations:
+            await msg.answer(
+                f"🚨 <b>Экстренный: {city}</b>\n\n"
+                f"❌ Нет подтверждённых данных о наличии топлива.\n\n"
+                f"💡 Сообщи о наличии сам — открой АЗС через «🔍 Найти АЗС» и нажми «📝 Сообщить».",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+
+        lines = [f"🚨 <b>Экстренный: {city}</b> — {len(stations)} АЗС с топливом\n"]
+        for i, s in enumerate(stations[:5], 1):
+            name = s.get("name", "АЗС")[:30]
+            operator = s.get("operator") or ""
+            address = s.get("address", "")[:50]
+            line = f"{i}. <b>{name}</b>"
+            if operator and operator != name:
+                line += f" ({operator})"
+            lines.append(line)
+            if address:
+                lines.append(f"   📍 {address}")
+
+        await msg.answer(
+            "\n".join(lines) + "\n\n💡 Без фильтров — здесь точно есть топливо (по последним отчётам).",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🗺 Открыть в Mini App", url=f"{MINI_APP_URL}?city={city}&emergency=1")],
+            ]),
+        )
+    except Exception as e:
+        await msg.answer(f"⚠️ Ошибка экстренного поиска: {e}", reply_markup=main_menu_keyboard())
+
+
+# === fuel:* — выбор топлива после выбора города ===
+async def fuel_callback(callback: CallbackQuery):
+    """Обрабатывает выбор топлива."""
+    await callback.answer()
+    data = callback.data or ""
+    parts = data.split(":")
+    if len(parts) < 3:
+        return
+    _, city, fuel = parts[0], parts[1], parts[2]
+    await show_city_results(callback.message, city, fuel=fuel)
+
+
+# === price_menu:* — показать меню выбора цены ===
+async def price_menu_callback(callback: CallbackQuery):
+    await callback.answer()
+    data = callback.data or ""
+    city = data.split(":", 1)[1] if ":" in data else ""
+    await callback.message.answer(
+        f"💰 <b>Фильтр по цене для {city}:</b>",
+        reply_markup=price_filter_keyboard(),
+    )
+
+
+# === net_menu:* — показать меню выбора сети ===
+async def net_menu_callback(callback: CallbackQuery):
+    await callback.answer()
+    data = callback.data or ""
+    city = data.split(":", 1)[1] if ":" in data else ""
+    await callback.message.answer(
+        f"⛽ <b>Фильтр по сети для {city}:</b>",
+        reply_markup=network_filter_keyboard(),
+    )
+
+
+# === price:* — фильтр по цене ===
+async def price_callback(callback: CallbackQuery):
+    await callback.answer()
+    data = callback.data or ""
+    parts = data.split(":")
+    if len(parts) < 2:
+        return
+    price_str = parts[1]
+    if price_str == "any":
+        await callback.message.answer("💰 Фильтр по цене сброшен.", reply_markup=main_menu_keyboard())
+        return
+    try:
+        max_price = float(price_str)
+        # Показываем АЗС до этой цены (по всем городам)
+        await show_city_results(callback.message, city="", max_price=max_price)
+    except ValueError:
+        pass
+
+
+# === net:* — фильтр по сети ===
+async def net_callback(callback: CallbackQuery):
+    await callback.answer()
+    data = callback.data or ""
+    parts = data.split(":")
+    if len(parts) < 2:
+        return
+    network = parts[1]
+    if network == "any":
+        await callback.message.answer("⛽ Фильтр по сети сброшен.", reply_markup=main_menu_keyboard())
+        return
+    await show_city_results(callback.message, city="", network=network)
+
+
+# === emergency:* — экстренный для конкретного города ===
+async def emergency_city_callback(callback: CallbackQuery):
+    await callback.answer()
+    data = callback.data or ""
+    parts = data.split(":")
+    if len(parts) < 2:
+        return
+    city = parts[1]
+    await emergency_handler(callback.message, city=city)
 
 
 # === premium callback (из /profile) ===

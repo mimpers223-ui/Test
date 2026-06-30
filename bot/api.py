@@ -450,6 +450,81 @@ async def handle_stations_by_city(request):
     })
 
 
+async def handle_emergency(request):
+    """GET /api/stations/emergency?city=..&fuel=..
+
+    ЭКСТРЕННЫЙ поиск: ближайшая АЗС с подтверждённым наличием топлива.
+    Без фильтров по цене, сети, очереди.
+    """
+    city = (request.query.get("city") or "").strip()
+    if not city:
+        return web.json_response({"error": "city is required"}, status=400)
+    fuel = request.query.get("fuel") or "92"
+
+    stations = await find_stations_by_city(
+        city=city,
+        fuel_type=None,  # Любое топливо
+        network=None,    # Любая сеть
+        max_price=None,  # Любая цена
+        has_stock=True,  # ТОЛЬКО с подтверждённым наличием
+        include_nearby_regions=True,
+        limit=20,
+    )
+
+    # Сортируем по свежести отчёта
+    result = []
+    for s in stations:
+        sid = s["id"]
+        statuses = await _bulk_get_statuses([sid])
+        status_list = statuses.get(sid, [])
+        # Только с available=True
+        if not status_list:
+            continue
+        last_status = status_list[0] if status_list else None
+        if not last_status or not last_status.get("available"):
+            continue
+        result.append({
+            "id": sid,
+            "name": s.get("name"),
+            "operator": s.get("operator") or s.get("name"),
+            "city": s.get("city"),
+            "address": s.get("address") or "",
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
+            "fuel_type": last_status.get("fuel_type"),
+            "price": float(last_status.get("price") or 0) if last_status.get("price") else None,
+            "queue_size": last_status.get("queue_size"),
+            "has_limit": last_status.get("has_limit"),
+            "updated_at": _to_iso(last_status.get("created_at")),
+            "is_verified": bool(s.get("is_verified")),
+        })
+
+    # Сортировка: verified → с ценой → по свежести
+    result.sort(key=lambda x: (
+        0 if x["is_verified"] else 1,
+        0 if x["price"] else 1,
+        x["updated_at"] or "",
+    ))
+
+    return web.json_response({
+        "stations": result,
+        "count": len(result),
+        "city": city,
+        "fuel": fuel,
+        "disclaimer": DISCLAIMER.replace("<b>", "").replace("</b>", ""),
+    })
+
+
+def _to_iso(dt):
+    """datetime → ISO string."""
+    if dt is None:
+        return None
+    from datetime import datetime, date
+    if isinstance(dt, (datetime, date)):
+        return dt.isoformat()
+    return str(dt)
+
+
 async def handle_search(request):
     """GET /api/search?q=... — поиск АЗС по городу/имени."""
     if not _check_rate(request.remote or "?", RATE_LIMIT_PER_MIN):
@@ -921,6 +996,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/reverse-geocode", handle_reverse_geocode)
     app.router.add_get("/api/stations", handle_stations)
     app.router.add_get("/api/stations/by-city", handle_stations_by_city)
+    app.router.add_get("/api/stations/emergency", handle_emergency)
     app.router.add_get("/api/search", handle_search)
     app.router.add_get("/api/stations/{id}", handle_station_detail)
     app.router.add_get("/api/stations/{id}/price-history", handle_price_history)

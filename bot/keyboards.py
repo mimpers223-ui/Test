@@ -44,6 +44,10 @@ def main_inline_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔍 Найти АЗС", callback_data="menu:find"),
+                InlineKeyboardButton(text="🌍 Выбрать город", callback_data="menu:city"),
+            ],
+            [
+                InlineKeyboardButton(text="🚨 Экстренный", callback_data="menu:emergency"),
                 InlineKeyboardButton(text="🗺 Карта", callback_data="menu:map"),
             ],
             [
@@ -61,6 +65,88 @@ def main_inline_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats"),
                 InlineKeyboardButton(text="ℹ️ Помощь", callback_data="menu:help"),
+            ],
+        ],
+    )
+
+
+# === Топ городов для быстрого выбора (Иваново + соседи + крупные) ===
+TOP_CITIES = [
+    ("Иваново", "Иваново"),
+    ("Москва", "Москва"),
+    ("Санкт-Петербург", "Санкт-Петербург"),
+    ("Ярославль", "Ярославль"),
+    ("Кострома", "Кострома"),
+    ("Владимир", "Владимир"),
+    ("Нижний Новгород", "Нижний Новгород"),
+    ("Тула", "Тула"),
+    ("Калуга", "Калуга"),
+    ("Краснодар", "Краснодар"),
+    ("Ростов-на-Дону", "Ростов-на-Дону"),
+    ("Казань", "Казань"),
+    ("Екатеринбург", "Екатеринбург"),
+    ("Новосибирск", "Новосибирск"),
+    ("Челябинск", "Челябинск"),
+    ("Самара", "Самара"),
+]
+
+
+def city_keyboard() -> InlineKeyboardMarkup:
+    """Кнопки для выбора города (inline)."""
+    rows = []
+    # По 2 кнопки в ряд
+    for i in range(0, len(TOP_CITIES), 2):
+        row = []
+        for j in range(i, min(i + 2, len(TOP_CITIES))):
+            name, _ = TOP_CITIES[j]
+            row.append(InlineKeyboardButton(
+                text=f"📍 {name}",
+                callback_data=f"city:{name}",
+            ))
+        rows.append(row)
+    # Кнопка "другой город" — ввод текстом
+    rows.append([InlineKeyboardButton(
+        text="✏️ Другой город (напишите в сообщении)",
+        callback_data="city:other",
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def price_filter_keyboard() -> InlineKeyboardMarkup:
+    """Фильтр по цене (любая / до 50/60/70/80/100)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💰 Любая", callback_data="price:any"),
+                InlineKeyboardButton(text="до 50₽", callback_data="price:50"),
+                InlineKeyboardButton(text="до 60₽", callback_data="price:60"),
+            ],
+            [
+                InlineKeyboardButton(text="до 70₽", callback_data="price:70"),
+                InlineKeyboardButton(text="до 80₽", callback_data="price:80"),
+                InlineKeyboardButton(text="до 100₽", callback_data="price:100"),
+            ],
+        ],
+    )
+
+
+def network_filter_keyboard() -> InlineKeyboardMarkup:
+    """Фильтр по сети АЗС."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⛽ Любая сеть", callback_data="net:any"),
+                InlineKeyboardButton(text="Лукойл", callback_data="net:Лукойл"),
+                InlineKeyboardButton(text="Газпром", callback_data="net:Газпромнефть"),
+            ],
+            [
+                InlineKeyboardButton(text="Роснефть", callback_data="net:Роснефть"),
+                InlineKeyboardButton(text="Татнефть", callback_data="net:Татнефть"),
+                InlineKeyboardButton(text="Shell", callback_data="net:Shell"),
+            ],
+            [
+                InlineKeyboardButton(text="Teboil", callback_data="net:Teboil"),
+                InlineKeyboardButton(text="Башнефть", callback_data="net:Башнефть"),
             ],
         ],
     )
