@@ -990,6 +990,7 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None, em
 
         stations_with_status = await get_stations_with_statuses(stations)
         logger.info("[cmd_find_stations] got statuses for %d", len(stations_with_status))
+
         promoted_ids = set(await get_promoted_station_ids(city) or [])
 
         def _sort_key(s):
@@ -1017,12 +1018,11 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None, em
         rows.append([_button("🔄 Фильтры", "secondary")])
         rows.append([_button(VK_BTN_HOME)])
         kb = vk_keyboard(rows)
-        logger.info("[cmd_find_stations] sending %d rows, title=%d chars", len(rows), len(title))
         await _send(msg, title, kb)
-        logger.info("[cmd_find_stations] sent OK")
     except Exception as e:
         logger.exception("[cmd_find_stations] FAILED: %s", e)
-        await _send(msg, "⚠️ Ошибка при загрузке", vk_main_menu())
+        err_msg = f"⚠️ Ошибка: {type(e).__name__}: {str(e)[:100]}"
+        await _send(msg, err_msg, vk_main_menu())
 
 
 async def handle_station_detail_text(msg: Message, station_id: int):
