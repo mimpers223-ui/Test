@@ -87,10 +87,10 @@ def vk_main_menu() -> str:
 
 
 def vk_city_keyboard() -> str:
-    """Выбор города (inline)."""
+    """Выбор города (inline, max 6 rows)."""
     from keyboards import TOP_CITIES
     rows = []
-    for i in range(0, min(len(TOP_CITIES), 10), 2):
+    for i in range(0, min(len(TOP_CITIES), 8), 2):
         row = []
         for j in range(i, min(i + 2, len(TOP_CITIES))):
             name, _ = TOP_CITIES[j]
@@ -195,10 +195,10 @@ def vk_premium_keyboard() -> str:
 
 
 def vk_report_city_keyboard() -> str:
-    """Выбор города для отчёта (inline)."""
+    """Выбор города для отчёта (inline, max 6 rows)."""
     from keyboards import TOP_CITIES
     rows = []
-    for i in range(0, min(len(TOP_CITIES), 10), 2):
+    for i in range(0, min(len(TOP_CITIES), 8), 2):
         row = []
         for j in range(i, min(i + 2, len(TOP_CITIES))):
             name, _ = TOP_CITIES[j]
@@ -210,9 +210,9 @@ def vk_report_city_keyboard() -> str:
 
 
 def vk_report_station_keyboard(stations: list[dict]) -> str:
-    """Список АЗС для выбора при отчёте."""
+    """Список АЗС для выбора при отчёте (max 6 rows)."""
     rows = []
-    for s in stations[:15]:
+    for s in stations[:4]:
         name = (s.get("name") or "АЗС")[:25]
         rows.append([_callback_button(f"⛽ {name}", "primary", {"cmd": "report_pick", "id": s["id"]})])
     rows.append([_callback_button("◀️ Назад", "secondary", {"cmd": "report_city_menu"})])
