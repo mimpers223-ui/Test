@@ -242,14 +242,22 @@ async def _create_schema_pg(pool):
                 # Восстанавливаем $$ блоки
                 for i, p in enumerate(protected):
                     stmt = stmt.replace(f"__PROTECTED_{i}__", p)
-                # Пропускаем VIEW и COMMENT — не критичны для бота, могут зависать
+                # Пропускаем VIEW, COMMENT и индексы — не критичны для бота, могут зависать через пуллер
                 upper = stmt.upper().strip()
                 if upper.startswith("CREATE OR REPLACE VIEW") or upper.startswith("COMMENT ON"):
                     continue
+                if "CREATE INDEX" in upper:
+                    try:
+                        await asyncio.wait_for(conn.execute(stmt), timeout=30)
+                    except asyncio.TimeoutError:
+                        logger.info(f"PG index timed out (exists? skipping): {stmt[:60]}...")
+                    except Exception as e:
+                        logger.info(f"PG index: {e} (skipping): {stmt[:60]}...")
+                    continue
                 try:
-                    await asyncio.wait_for(conn.execute(stmt), timeout=15)
+                    await asyncio.wait_for(conn.execute(stmt), timeout=30)
                 except asyncio.TimeoutError:
-                    logger.warning(f"PG schema stmt timed out (15s): {stmt[:80]}...")
+                    logger.warning(f"PG schema stmt timed out (30s): {stmt[:80]}...")
                 except Exception as e:
                     logger.warning(f"PG schema stmt: {e} | {stmt[:80]}...")
             logger.info("PG schema.sql applied")
