@@ -196,20 +196,30 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
     lines = [f"⛽ <b>{name}</b>"]
     if is_demo:
         lines[0] += "  <i>(демо-данные)</i>"
+    if is_verified:
+        lines[0] += "  ✓"
     if operator:
-        lines.append(f"🏢 Оператор: {operator}")
+        lines.append(f"🏢 {operator}")
+
+    # Адрес — крупно и заметно
+    addr_parts = []
     if city:
-        lines.append(f"🏙 Город: {city}")
+        addr_parts.append(city)
     if address:
-        lines.append(f"📍 {address}")
+        addr_parts.append(address)
+    if addr_parts:
+        lines.append(f"📍 <b>{', '.join(addr_parts)}</b>")
+
+    # Координаты (мелко, для справки)
+    lat = station.get("lat")
+    lon = station.get("lon")
+    if lat and lon and (lat != 0 and lon != 0):
+        lines.append(f"🌐 {lat:.5f}, {lon:.5f}")
 
     extras = []
     if has_24_7:
         extras.append("24/7")
-    if is_verified:
-        extras.append("✓ Verified")
     if fuel_types and isinstance(fuel_types, list):
-        # Только если выглядит как массив (а не как JSON-строка)
         if all(isinstance(f, str) for f in fuel_types):
             extras.append("топливо: " + ", ".join(fuel_types[:5]))
     if extras:

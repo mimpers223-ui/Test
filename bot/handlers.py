@@ -779,6 +779,50 @@ async def successful_payment_handler(message: Message):
     await log_event(uid, "premium_activated", payload={"stars": sp.total_amount})
 
 
+async def successful_payment_handler(message: Message):
+    sp = message.successful_payment
+    if not sp or sp.currency != "XTR":
+        return
+    payload = sp.invoice_payload
+    uid = await get_user_id_by_telegram_id(_tg_id(message)) if _tg_id(message) else None
+
+    if payload == "premium_30d":
+        if not uid:
+            await message.answer("Ошибка: пользователь не найден.")
+            return
+        result = await activate_premium(
+            user_id=uid,
+            days=settings.PREMIUM_DURATION_DAYS,
+            charge_id=sp.telegram_payment_charge_id,
+            stars=sp.total_amount,
+        )
+        await message.answer(
+            f"🎉 <b>Premium активирован!</b>\n\n"
+            f"📅 Действует до: {result['expires_at'][:10]}\n"
+            f"💎 Спасибо за поддержку «Бензин рядом»!\n\n"
+            f"🔔 Push без cooldown, 📊 аналитика, 🚗 premium-бейдж — всё твоё.",
+        )
+        await log_event(uid, "premium_activated", payload={"stars": sp.total_amount})
+
+    elif payload.startswith("promote_"):
+        # promote_{owner_station_id}
+        try:
+            osid = int(payload.split("_")[1])
+        except (IndexError, ValueError):
+            await message.answer("⚠️ Ошибка: неверный payload.")
+            return
+        from db import promote_station, PROMO_DURATION_DAYS
+        await promote_station(osid, days=PROMO_DURATION_DAYS)
+        await message.answer(
+            f"🌟 <b>АЗС продвинута на {PROMO_DURATION_DAYS} дней!</b>\n\n"
+            f"Теперь твоя АЗС показывается выше в выдаче по городу.\n"
+            f"📅 До: +{PROMO_DURATION_DAYS} дн.\n\n"
+            f"Спасибо за поддержку «Бензин рядом»!",
+        )
+        if uid:
+            await log_event(uid, "station_promoted", payload={"owner_station_id": osid, "stars": sp.total_amount})
+
+
 # === Inline mode ===
 async def inline_search(inline_query: InlineQuery):
     query = (inline_query.query or "").strip()
@@ -1099,8 +1143,13 @@ async def show_city_results(msg, city: str, fuel: str = None, max_price: float =
 
         stations_with_status = await get_stations_with_statuses(stations)
 
+        # Определяем продвинутые АЗС
+        from db import get_promoted_station_ids
+        promoted_ids = set(await get_promoted_station_ids(city))
+
         def _sort_key(s):
             return (
+                0 if s["id"] in promoted_ids else 1,  # promoted first
                 0 if s.get("is_verified") else 1,
                 0 if s.get("has_data") else 1,
                 (s.get("name") or "").lower(),
@@ -1411,6 +1460,42 @@ async def cmd_stats(message: Message):
     await message.answer(text, reply_markup=main_menu_keyboard())
 
 
+# === Admin: установить рекламный баннер ===
+async def cmd_set_ad(message: Message):
+    """Формат: /set_ad Текст баннера | https://ссылка"""
+    if not settings.is_admin(user_id=message.from_user.id, username=message.from_user.username):
+        await message.answer("⛔ Только для администраторов.")
+        return
+    raw = message.text.replace("/set_ad", "", 1).strip()
+    if not raw or "|" not in raw:
+        await message.answer(
+            "📢 <b>Установить рекламный баннер</b>\n\n"
+            "Формат: <code>/set_ad Текст баннера | https://ссылка</code>\n"
+            "Чтобы удалить: <code>/set_ad off</code>",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    parts = raw.split("|", 1)
+    text = parts[0].strip()
+    url = parts[1].strip()
+    if text.lower() == "off":
+        settings.AD_BANNER_TEXT = ""
+        settings.AD_BANNER_URL = ""
+        await message.answer("📢 Баннер отключён.")
+        return
+    if not url.startswith("http"):
+        await message.answer("❌ Ссылка должна начинаться с http/https")
+        return
+    settings.AD_BANNER_TEXT = text
+    settings.AD_BANNER_URL = url
+    await message.answer(
+        f"📢 <b>Баннер установлен!</b>\n\n"
+        f"Текст: {text}\n"
+        f"Ссылка: {url}\n\n"
+        f"Будет показан в главном меню."
+    )
+
+
 # === Геолокация ===
 async def handle_location(message: Message, state: FSMContext):
     telegram_id = _tg_id(message)
@@ -1551,8 +1636,124 @@ async def show_station_details(callback: CallbackQuery):
 
     statuses = await get_station_current_status(station_id)
     text = format_station_card(station, statuses)
-    kb = station_actions_keyboard(station_id, has_statuses=len(statuses) > 0)
+    lat = station.get("lat")
+    lon = station.get("lon")
+    kb = station_actions_keyboard(station_id, has_statuses=len(statuses) > 0, lat=lat, lon=lon)
+
+    # Если пользователь — владелец АЗС, добавляем кнопку продвижения
+    from db import is_owner_of_station, is_station_promoted, get_owner_station_by_user_and_station, PROMO_PRICE_STARS
+    tid = _tg_id(callback.message)
+    uid_owner = await get_user_id_by_telegram_id(tid) if tid else None
+    if uid_owner and await is_owner_of_station(uid_owner, station_id):
+        owner_station = await get_owner_station_by_user_and_station(uid_owner, station_id)
+        if owner_station:
+            is_promo = await is_station_promoted(station_id)
+            if is_promo:
+                promo_text = f"🌟 Продвижение активно до {owner_station.get('promoted_until', '?')[:10]}"
+            else:
+                promo_text = f"🌟 Продвинуть АЗС ({PROMO_PRICE_STARS}⭐ / 30 дн)"
+            kb.inline_keyboard.insert(0, [InlineKeyboardButton(
+                text=promo_text,
+                callback_data=f"promote:{station_id}",
+            )])
+
     await callback.message.answer(text, reply_markup=kb)
+    await callback.answer()
+
+
+# === Маршрут до АЗС ===
+async def route_callback(callback: CallbackQuery):
+    """Открывает маршрут до АЗС через Яндекс Карты / 2ГИС / Google Maps."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 4:
+        return
+    try:
+        station_id = int(parts[1])
+        lat = float(parts[2])
+        lon = float(parts[3])
+    except (ValueError, IndexError):
+        return
+
+    # Текст с адресом
+    station = await get_station_by_id(station_id)
+    name = station.get("name", "АЗС") if station else "АЗС"
+    address = station.get("address", "") if station else ""
+    city = station.get("city", "") if station else ""
+
+    location = f"{name}"
+    if address:
+        location += f", {address}"
+    if city:
+        location += f", {city}"
+
+    # Ссылки на навигаторы
+    yandex_url = f"https://yandex.ru/maps/?rtext={lat},{lon}&rtt=auto"
+    gis_url = f"https://2gis.ru/geo/{lon}/{lat}"
+    google_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗺 Яндекс Карты", url=yandex_url)],
+        [InlineKeyboardButton(text="🗺 2ГИС", url=gis_url)],
+        [InlineKeyboardButton(text="🗺 Google Maps", url=google_url)],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data=f"st:{station_id}")],
+    ])
+
+    text = (
+        f"📍 <b>Маршрут до АЗС</b>\n\n"
+        f"⛽ {esc(location)}\n\n"
+        f"Выбери навигатор:"
+    )
+    await callback.message.answer(text, reply_markup=kb)
+
+
+def esc(s: str) -> str:
+    """Экранирование HTML."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# === Продвижение АЗС ===
+async def promote_callback(callback: CallbackQuery):
+    """Отправить invoice для продвижения АЗС."""
+    station_id = int(callback.data.split(":")[1])
+    tid = _tg_id(callback.message)
+    uid = await get_user_id_by_telegram_id(tid) if tid else None
+    if not uid:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    from db import is_owner_of_station, get_owner_station_by_user_and_station, is_station_promoted, PROMO_PRICE_STARS
+    if not await is_owner_of_station(uid, station_id):
+        await callback.answer("Только владелец может продвигать АЗС", show_alert=True)
+        return
+
+    owner_station = await get_owner_station_by_user_and_station(uid, station_id)
+    if not owner_station:
+        await callback.answer("Запись не найдена", show_alert=True)
+        return
+
+    if await is_station_promoted(station_id):
+        await callback.answer("Уже продвигается!", show_alert=True)
+        return
+
+    station = await get_station_by_id(station_id)
+    name = station.get("name", "АЗС") if station else "АЗС"
+
+    prices = [LabeledPrice(label=f"Продвижение · 30 дней", amount=PROMO_PRICE_STARS)]
+    try:
+        await callback.message.answer_invoice(
+            title=f"Продвижение: {name}",
+            description=f"Приоритет в выдаче по городу на 30 дней. АЗС будет отображаться выше остальных.",
+            payload=f"promote_{owner_station['id']}",
+            provider_token="",
+            currency="XTR",
+            prices=prices,
+        )
+    except Exception as e:
+        logger.exception("Promote invoice failed: %s", e)
+        await callback.answer("Ошибка", show_alert=True)
+        return
     await callback.answer()
 
 
@@ -1907,6 +2108,7 @@ def register_all_handlers(dp: Dispatcher):
     dp.message.register(cmd_profile, Command("profile"))
     dp.message.register(cmd_stats, Command("stats"))
     dp.message.register(cmd_moderate, Command("moderate"))
+    dp.message.register(cmd_set_ad, Command("set_ad"))
     dp.message.register(cmd_my_id, Command("my_id"))
     dp.message.register(cmd_find_raw, Command("find_raw"))
 
@@ -1936,6 +2138,10 @@ def register_all_handlers(dp: Dispatcher):
 
     # Callback (кнопки)
     dp.callback_query.register(show_station_details, F.data.startswith("st:"))
+    # Route
+    dp.callback_query.register(route_callback, F.data.startswith("route:"))
+    # Promote
+    dp.callback_query.register(promote_callback, F.data.startswith("promote:"))
     # Report flow
     dp.callback_query.register(report_city_callback, F.data.startswith("report_city:"))
     dp.callback_query.register(report_pick_callback, F.data.startswith("report_pick:"))

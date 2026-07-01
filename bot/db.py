@@ -115,6 +115,14 @@ async def _migrate_sqlite(db):
     if "next_delivery_at" not in cols:
         await db.execute("ALTER TABLE reports ADD COLUMN next_delivery_at TEXT")
 
+    # Миграция: owner_stations — платное размещение
+    async with db.execute("PRAGMA table_info(owner_stations)") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    if "is_promoted" not in cols:
+        await db.execute("ALTER TABLE owner_stations ADD COLUMN is_promoted INTEGER DEFAULT 0")
+    if "promoted_until" not in cols:
+        await db.execute("ALTER TABLE owner_stations ADD COLUMN promoted_until TEXT")
+
     # Создаём owner_stations если её нет
     await db.execute(
         """CREATE TABLE IF NOT EXISTS owner_stations (
@@ -280,7 +288,99 @@ async def _fetch(sql: str, *args, one: bool = False):
                 row = await cur.fetchone()
                 return dict(row) if row else None
             rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+        return [dict(r) for r in rows]
+
+
+# === Продвижение АЗС (платное размещение) ===
+
+PROMO_PRICE_STARS = 299  #Stars за 30 дней продвижения
+PROMO_DURATION_DAYS = 30
+
+
+async def promote_station(owner_station_id: int, days: int = PROMO_DURATION_DAYS) -> None:
+    """Активировать продвижение АЗС на N дней."""
+    from datetime import datetime, timedelta
+    expires = (datetime.now() + timedelta(days=days)).isoformat()
+    if USE_SQLITE:
+        await _db.execute(
+            "UPDATE owner_stations SET is_promoted = 1, promoted_until = ? WHERE id = ?",
+            expires, owner_station_id,
+        )
+        await _db.commit()
+    else:
+        async with _db.acquire() as conn:
+            await conn.execute(
+                "UPDATE owner_stations SET is_promoted = TRUE, promoted_until = $1 WHERE id = $2",
+                expires, owner_station_id,
+            )
+
+
+async def is_station_promoted(station_id: int) -> bool:
+    """Проверяет, продвигается ли АЗС (и не истёк ли срок."""
+    from datetime import datetime
+    if USE_SQLITE:
+        row = await _fetch(
+            """SELECT is_promoted, promoted_until FROM owner_stations
+               WHERE station_id = ? AND is_verified = 1 AND is_promoted = 1
+               LIMIT 1""",
+            station_id, one=True,
+        )
+    else:
+        row = await _fetch(
+            """SELECT is_promoted, promoted_until FROM owner_stations
+               WHERE station_id = $1 AND is_verified = TRUE AND is_promoted = TRUE
+               LIMIT 1""",
+            station_id, one=True,
+        )
+    if not row:
+        return False
+    until = row.get("promoted_until")
+    if not until:
+        return True
+    try:
+        if isinstance(until, str):
+            until_dt = datetime.fromisoformat(until.replace(" ", "T"))
+        else:
+            until_dt = until
+        return until_dt > datetime.now()
+    except Exception:
+        return True
+
+
+async def get_promoted_station_ids(city: str) -> list[int]:
+    """Возвращает ID продвинутых АЗС в городе."""
+    if USE_SQLITE:
+        rows = await _fetch(
+            """SELECT os.station_id FROM owner_stations os
+               JOIN stations s ON s.id = os.station_id
+               WHERE s.city = ? AND os.is_verified = 1 AND os.is_promoted = 1
+                 AND (os.promoted_until IS NULL OR os.promoted_until > datetime('now'))""",
+            city,
+        )
+    else:
+        rows = await _fetch(
+            """SELECT os.station_id FROM owner_stations os
+               JOIN stations s ON s.id = os.station_id
+               WHERE s.city = $1 AND os.is_verified = TRUE AND os.is_promoted = TRUE
+                 AND (os.promoted_until IS NULL OR os.promoted_until > NOW())""",
+            city,
+        )
+    return [r["station_id"] for r in rows]
+
+
+async def get_owner_station_by_user_and_station(user_id: int, station_id: int) -> dict | None:
+    """Получить owner_stations запись по user_id + station_id."""
+    if USE_SQLITE:
+        row = await _fetch(
+            "SELECT * FROM owner_stations WHERE user_id = ? AND station_id = ?",
+            user_id, station_id, one=True,
+        )
+    else:
+        row = await _fetch(
+            "SELECT * FROM owner_stations WHERE user_id = $1 AND station_id = $2",
+            user_id, station_id, one=True,
+        )
+    return row
     async with _db.acquire() as conn:
         if one:
             row = await conn.fetchrow(sql, *args)

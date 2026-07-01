@@ -41,29 +41,32 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 
 def main_inline_keyboard() -> InlineKeyboardMarkup:
     """Главное inline-меню (отображается в сообщении)."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🔍 Найти АЗС", callback_data="menu:find"),
-                InlineKeyboardButton(text="📝 Сообщить", callback_data="menu:report"),
-            ],
-            [
-                InlineKeyboardButton(text="🔔 Уведомления", callback_data="menu:subscribe"),
-                InlineKeyboardButton(text="👤 Я владелец", callback_data="menu:owner"),
-            ],
-            [
-                InlineKeyboardButton(text="📱 Приложение", callback_data="menu:app"),
-                InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
-            ],
-            [
-                InlineKeyboardButton(text="🏪 Мои АЗС", callback_data="menu:my_stations"),
-                InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help"),
-            ],
-            [
-                InlineKeyboardButton(text="💎 Premium", callback_data="menu:premium"),
-            ],
+    from config import settings
+    rows = [
+        [
+            InlineKeyboardButton(text="🔍 Найти АЗС", callback_data="menu:find"),
+            InlineKeyboardButton(text="📝 Сообщить", callback_data="menu:report"),
         ],
-    )
+        [
+            InlineKeyboardButton(text="🔔 Уведомления", callback_data="menu:subscribe"),
+            InlineKeyboardButton(text="👤 Я владелец", callback_data="menu:owner"),
+        ],
+        [
+            InlineKeyboardButton(text="📱 Приложение", callback_data="menu:app"),
+            InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
+        ],
+        [
+            InlineKeyboardButton(text="🏪 Мои АЗС", callback_data="menu:my_stations"),
+            InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help"),
+        ],
+        [
+            InlineKeyboardButton(text="💎 Premium", callback_data="menu:premium"),
+        ],
+    ]
+    # Рекламный баннер (если задан)
+    if settings.AD_BANNER_TEXT and settings.AD_BANNER_URL:
+        rows.append([InlineKeyboardButton(text=f"📢 {settings.AD_BANNER_TEXT}", url=settings.AD_BANNER_URL)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # === Топ городов для быстрого выбора (Иваново + соседи + крупные) ===
@@ -206,30 +209,28 @@ def with_home_inline(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=new_kb)
 
 
-def station_actions_keyboard(station_id: int, has_statuses: bool = True) -> InlineKeyboardMarkup:
+def station_actions_keyboard(station_id: int, has_statuses: bool = True, lat: float = None, lon: float = None) -> InlineKeyboardMarkup:
     """Действия с конкретной АЗС."""
-    return with_home_inline(InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📝 Сообщить о наличии",
-                    callback_data=f"report:{station_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔔 Подписаться на эту АЗС",
-                    callback_data=f"sub_station:{station_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="◀️ Назад к списку",
-                    callback_data="back_to_list",
-                ),
-            ],
-        ],
-    ))
+    buttons = []
+    # Кнопка маршрута (если есть координаты)
+    if lat and lon:
+        buttons.append([InlineKeyboardButton(
+            text="📍 Построить маршрут",
+            callback_data=f"route:{station_id}:{lat}:{lon}",
+        )])
+    buttons.append([InlineKeyboardButton(
+        text="📝 Сообщить о наличии",
+        callback_data=f"report:{station_id}",
+    )])
+    buttons.append([InlineKeyboardButton(
+        text="🔔 Подписаться на эту АЗС",
+        callback_data=f"sub_station:{station_id}",
+    )])
+    buttons.append([InlineKeyboardButton(
+        text="◀️ Назад к списку",
+        callback_data="back_to_list",
+    )])
+    return with_home_inline(InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 def fuel_type_keyboard(station_id: int) -> InlineKeyboardMarkup:

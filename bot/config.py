@@ -34,6 +34,9 @@ class Settings:
     PREMIUM_PRICE_STARS: int = int(os.getenv("PREMIUM_PRICE_STARS", "149"))
     PREMIUM_DURATION_DAYS: int = int(os.getenv("PREMIUM_DURATION_DAYS", "30"))
     WEB_APP_URL: str = os.getenv("WEB_APP_URL", "")  # URL Mini App для Telegram WebApp
+    # Рекламный баннер (показывается в главном меню)
+    AD_BANNER_TEXT: str = os.getenv("AD_BANNER_TEXT", "")
+    AD_BANNER_URL: str = os.getenv("AD_BANNER_URL", "")
 
     def __post_init__(self):
         if self.ADMIN_IDS is None:
