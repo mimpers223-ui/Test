@@ -11,3 +11,6 @@ certifi>=2023.7.22
 
 # === Optional: для парсера TG-каналов ===
 telethon>=1.36.0  # parse_tg_channels.py (Telethon)
+
+# === VK Bot ===
+vkbottle>=4.10.0

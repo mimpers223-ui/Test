@@ -830,15 +830,27 @@ async def mark_user_blocked(telegram_id: int) -> None:
 
 
 async def get_or_create_user(message) -> int:
-    """Создаёт/обновляет пользователя из сообщения Telegram."""
-    user = message.from_user
-    return await upsert_user(
-        telegram_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        language_code=user.language_code,
-    )
+    """Создаёт/обновляет пользователя из сообщения (Telegram или VK)."""
+    # Telegram
+    if hasattr(message, "from_user") and message.from_user is not None:
+        user = message.from_user
+        return await upsert_user(
+            telegram_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            language_code=user.language_code,
+        )
+    # VK
+    if hasattr(message, "peer_id"):
+        return await upsert_user(
+            telegram_id=message.peer_id,
+            username=f"vk_{message.peer_id}",
+            first_name=None,
+            last_name=None,
+            language_code="ru",
+        )
+    return 0
 
 
 # === АЗС и поиск ===
