@@ -217,53 +217,33 @@ async def _create_indexes_sqlite(db):
 
 
 async def _create_schema_pg(pool):
-    """Создаёт минимальные таблицы в PostgreSQL (если их ещё нет).
+    """Создаёт все таблицы в PostgreSQL (CREATE IF NOT EXISTS).
 
-    В production (Supabase/managed PG) считаем что schema.sql уже применён
-    вручную (через Dashboard или psql). Эта функция только добавляет недостающее.
+    Выполняет schema.sql + недостающие миграции.
+    Безопасно вызывать повторно — IF NOT EXISTS пропустит существующие.
     """
     async with pool.acquire() as conn:
-        # Миграция: добавляем недостающие колонки
-        try:
-            await conn.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS next_delivery_at TIMESTAMPTZ")
-        except Exception as e:
-            logger.warning(f"PG migration next_delivery_at: {e}")
+        # 1. Полная схема из schema.sql
+        schema_path = Path(__file__).parent.parent / "db" / "schema.sql"
+        if schema_path.exists():
+            sql = schema_path.read_text(encoding="utf-8")
+            # Разбиваем на отдельные statements (asyncpg не умеет multi-statement)
+            for stmt in sql.split(";"):
+                stmt = stmt.strip()
+                if not stmt or stmt.startswith("--"):
+                    continue
+                try:
+                    await conn.execute(stmt)
+                except Exception as e:
+                    logger.warning(f"PG schema stmt: {e} | {stmt[:80]}...")
+            logger.info("PG schema.sql applied")
 
-        # owner_stations: платное размещение
+        # 2. owner_stations: платное размещение (если таблица уже есть без этих колонок)
         try:
             await conn.execute("ALTER TABLE owner_stations ADD COLUMN IF NOT EXISTS is_promoted BOOLEAN DEFAULT FALSE")
             await conn.execute("ALTER TABLE owner_stations ADD COLUMN IF NOT EXISTS promoted_until TIMESTAMPTZ")
         except Exception as e:
             logger.warning(f"PG migration owner_stations promoted: {e}")
-
-        # user_badges
-        await conn.execute(
-            """CREATE TABLE IF NOT EXISTS user_badges (
-                id BIGSERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                badge_code TEXT NOT NULL,
-                awarded_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE(user_id, badge_code)
-            )"""
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges (user_id)"
-        )
-        # premium_subscriptions
-        await conn.execute(
-            """CREATE TABLE IF NOT EXISTS premium_subscriptions (
-                id BIGSERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                telegram_payment_charge_id TEXT,
-                stars_amount INTEGER,
-                started_at TIMESTAMPTZ DEFAULT NOW(),
-                expires_at TIMESTAMPTZ NOT NULL,
-                is_active BOOLEAN DEFAULT TRUE
-            )"""
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_premium_user ON premium_subscriptions (user_id) WHERE is_active"
-        )
 
 
 from contextlib import asynccontextmanager
