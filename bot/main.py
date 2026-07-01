@@ -2,6 +2,7 @@
 Бот «Бензин рядом» — точка входа.
 Запускает одновременно:
 - Telegram-бота (polling)
+- VK-бота (polling)
 - HTTP API для Mini App (порт 8080)
 """
 import asyncio
@@ -29,6 +30,7 @@ from db import close_db, init_db
 from handlers import register_all_handlers
 from push_worker import push_loop
 from channel_poster import channel_loop
+from vk_bot import run_vk_bot
 
 # Логирование
 BOT_DIR = Path(__file__).parent
@@ -132,6 +134,7 @@ async def main():
 
     api_runner = await run_api()
     bot_task: asyncio.Task | None = None
+    vk_task: asyncio.Task | None = None
     workers_task: asyncio.Task | None = None
     stop_event = asyncio.Event()
 
@@ -146,6 +149,10 @@ async def main():
 
     try:
         bot_task = asyncio.create_task(run_bot())
+        # VK-бот запускается параллельно (если задан VK_TOKEN)
+        logger.info(">>> Создаю задачу VK-бота...")
+        vk_task = asyncio.create_task(_safe_worker(run_vk_bot(), "vk_bot"))
+        logger.info(">>> Задача VK-бота создана")
         # Ждём готовности bot (макс 5 сек)
         for _ in range(50):
             if settings.bot:
@@ -159,7 +166,7 @@ async def main():
         await stop_event.wait()
     finally:
         logger.info("Останавливаюсь...")
-        for t in (bot_task, workers_task):
+        for t in (bot_task, vk_task, workers_task):
             if t and not t.done():
                 t.cancel()
                 try:
