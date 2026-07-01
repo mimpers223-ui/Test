@@ -752,32 +752,6 @@ async def pre_checkout_handler(pre_checkout: PreCheckoutQuery):
     await pre_checkout.answer(ok=True)
 
 
-async def successful_payment_handler(message: Message):
-    sp = message.successful_payment
-    if not sp or sp.currency != "XTR":
-        return
-    if sp.invoice_payload != "premium_30d":
-        await message.answer("⚠️ Неизвестный платёж. Напишите в поддержку.")
-        return
-    await get_or_create_user(message)
-    uid = await get_user_id_by_telegram_id(_tg_id(message))
-    if not uid:
-        await message.answer("Ошибка: пользователь не найден.")
-        return
-    result = await activate_premium(
-        user_id=uid,
-        days=settings.PREMIUM_DURATION_DAYS,
-        charge_id=sp.telegram_payment_charge_id,
-        stars=sp.total_amount,
-    )
-    await message.answer(
-        f"🎉 <b>Premium активирован!</b>\n\n"
-        f"📅 Действует до: {result['expires_at'][:10]}\n"
-        f"💎 Спасибо за поддержку «Бензин рядом»!\n\n"
-        f"🔔 Push без cooldown, 📊 аналитика, 🚗 premium-бейдж — всё твоё.",
-    )
-    await log_event(uid, "premium_activated", payload={"stars": sp.total_amount})
-
 
 async def successful_payment_handler(message: Message):
     sp = message.successful_payment
@@ -1607,27 +1581,28 @@ async def _do_find(message: Message, lat: float, lon: float):
 
 
 def _get_main_status_icon(statuses: list) -> str:
+    """Агрегирует статус по всем видам топлива: лучший из всех = иконка станции."""
     if not statuses:
         return "❓"
-    for fuel in ["92", "95", "98", "diesel"]:
-        for st in statuses:
-            if st.get("fuel_type") == fuel:
-                available = st.get("available")
-                if available is True or available == 1:
-                    return "✅"
-                if available is False or available == 0:
-                    return "❌"
-                return "⚠️"
-    # fallback: skip 'all' fuel type
+    has_available = False
+    has_low = False
+    has_unavailable = False
     for st in statuses:
         if st.get("fuel_type") == "all":
             continue
         available = st.get("available")
         if available is True or available == 1:
-            return "✅"
-        if available is False or available == 0:
-            return "❌"
+            has_available = True
+        elif available is None:
+            has_low = True
+        elif available is False or available == 0:
+            has_unavailable = True
+    if has_available:
+        return "✅"
+    if has_low:
         return "⚠️"
+    if has_unavailable:
+        return "❌"
     return "❓"
 
 

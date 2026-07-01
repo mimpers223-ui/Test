@@ -1514,22 +1514,16 @@ async def get_station_current_status(station_id: int) -> list:
             (station_id,)
         ) as cur:
             rows = await cur.fetchall()
-        # Группируем по fuel_type (берём последний с максимальным confidence)
-        # Конвертируем SQLite 2 → None ("кончается")
-        seen = set()
+        # Возвращаем ВСЕ отчёты (format_station_card сам группирует и выбирает лучший)
         result = []
         for row in rows:
             r = dict(row)
-            if r["fuel_type"] in seen:
-                continue
-            seen.add(r["fuel_type"])
             if r.get("available") == 1:
                 r["available"] = True
             elif r.get("available") == 0:
                 r["available"] = False
             elif r.get("available") == 2:
                 r["available"] = None
-            # next_delivery_at: SQLite хранит как строку, конвертируем
             nd = r.get("next_delivery_at")
             if nd and isinstance(nd, str):
                 try:
@@ -1542,7 +1536,7 @@ async def get_station_current_status(station_id: int) -> list:
         async with _db.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT DISTINCT ON (fuel_type)
+                SELECT
                     fuel_type, available, price, queue_size, has_limit,
                     limit_liters, confidence, created_at AS last_report_at,
                     next_delivery_at, source

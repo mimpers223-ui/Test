@@ -5,8 +5,8 @@ VK-бот «Бензин рядом» — полная копия Telegram-бо�
 import json
 import logging
 import time
-
 import re
+
 from vkbottle import Bot
 from vkbottle.bot import Message
 from vkbottle_types.events.bot_events import MessageEvent
@@ -45,7 +45,6 @@ from vk_keyboards import (
     vk_report_status_keyboard,
     vk_subscribe_geo_keyboard,
     vk_subscribe_radius_keyboard,
-    vk_premium_keyboard,
     vk_report_city_keyboard,
     vk_report_station_keyboard,
     _button,
@@ -119,7 +118,6 @@ def _vk_text(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text)
 
 
-# === Helpers ===
 async def _ensure_user(msg: Message) -> int | None:
     uid = _uid(msg)
     try:
@@ -134,40 +132,6 @@ async def _send(msg: Message, text: str, keyboard: str | None = None):
     if keyboard:
         kwargs["keyboard"] = keyboard
     await msg.answer(**kwargs)
-
-
-async def _edit(event: MessageEvent, text: str, keyboard: str | None = None):
-    clean = _truncate(_vk_text(text))
-    try:
-        await event.edit_message(message=clean, keyboard=keyboard)
-    except Exception as e:
-        logger.debug(f"edit_message failed: {e}, sending new")
-        try:
-            await event.send_message(message=clean, keyboard=keyboard)
-        except Exception as e2:
-            logger.warning(f"send_message also failed: {e2}")
-
-
-async def _snackbar(event: MessageEvent, text: str):
-    try:
-        await event.show_snackbar(text)
-    except Exception:
-        pass
-
-
-async def _ensure_user_from_event(event: MessageEvent) -> int | None:
-    uid = _uid_from_event(event)
-    try:
-        return await upsert_user(
-            telegram_id=uid,
-            username=f"vk_{uid}",
-            first_name=None,
-            last_name=None,
-            language_code="ru",
-        )
-    except Exception as e:
-        logger.warning(f"_ensure_user_from_event failed: {e}")
-        return None
 
 
 def _get_main_status_icon(statuses: list) -> str:
@@ -192,6 +156,28 @@ def _get_main_status_icon(statuses: list) -> str:
             return "❌"
         return "⚠️"
     return "❓"
+
+
+def _sort_key(s, promoted_ids):
+    statuses = s.get("statuses") or []
+    non_all = [st for st in statuses if st.get("fuel_type") != "all"]
+    has_available = any(st.get("available") is True for st in non_all)
+    has_low = any(st.get("available") is None for st in non_all)
+    has_unavailable = any(st.get("available") is False for st in non_all)
+    if has_available:
+        avail_rank = 0
+    elif has_low:
+        avail_rank = 1
+    elif has_unavailable:
+        avail_rank = 2
+    else:
+        avail_rank = 3
+    return (
+        0 if s["id"] in promoted_ids else 1,
+        avail_rank,
+        0 if s.get("is_verified") else 1,
+        (s.get("name") or "").lower(),
+    )
 
 
 # ====================================================================
@@ -310,7 +296,7 @@ async def cmd_my_stations(msg: Message):
     for s in stations[:5]:
         name = (s.get("name") or "АЗС")[:25]
         verified = " ✓" if s.get("is_verified") else ""
-        role_icon = "👑" if s.get("role") == "owner" else "👨‍🔧"
+        role_icon = "👑" if s.get("role") == "owner" else "👨\u200d🔧"
         label = f"{role_icon} {name}{verified}"
         rows.append([_button(label[:40], "primary", {"cmd": "mystation", "id": s["station_id"]})])
     rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
@@ -363,328 +349,15 @@ async def cmd_stats(msg: Message):
     await _send(msg, text, vk_main_menu())
 
 
-# === Callback handlers ===
-
-async def handle_home(event: MessageEvent):
-    uid = _uid_from_event(event)
-    _owner_waiting_search.discard(uid)
-    _owner_waiting_role.pop(uid, None)
-    _owner_waiting_inn.discard(uid)
-    _owner_state_data.pop(uid, None)
-    _user_state.pop(uid, None)
-    await _edit(event, "🏠 <b>Главное меню</b>", vk_main_menu())
-    await _snackbar(event, "🏠 В начало")
-
-
-async def handle_city_select(event: MessageEvent):
-    payload = _parse_payload(event)
-    city = payload.get("city", "")
-    if city == "other":
-        _user_state[_uid_from_event(event)] = {"awaiting": "city_input"}
-        await _snackbar(event, "✏️ Напиши название города")
-        return
-    await _show_filters(event, city)
-
-
-async def _show_filters(event_or_msg, city: str):
-    text = f"📍 <b>{city}</b>\n\nВыбери тип топлива или фильтры:"
-    kb = vk_filters_keyboard(city)
-    if isinstance(event_or_msg, MessageEvent):
-        await _edit(event_or_msg, text, kb)
-    else:
-        await _send(event_or_msg, text, kb)
-
-
-async def handle_fuel_filter(event: MessageEvent):
-    payload = _parse_payload(event)
-    city = payload.get("city", "")
-    fuel = payload.get("fuel", "")
-    await _show_station_list(event, city, fuel=fuel)
-
-
-async def handle_emergency(event: MessageEvent):
-    payload = _parse_payload(event)
-    city = payload.get("city", "")
-    if not city:
-        await _snackbar(event, "Выбери город")
-        return
-    await _do_emergency(event, city)
-
-
-async def _show_station_list(event_or_msg, city: str, fuel=None, network=None, max_price=None):
-    try:
-        stations = await find_stations_by_city(
-            city=city, fuel_type=fuel, network=network,
-            max_price=max_price, has_stock=False, limit=20,
-        )
-        if not stations:
-            text = f"🔍 <b>В {city} ничего не найдено</b>"
-            kb = vk_keyboard([
-                [_button("🔄 Сбросить фильтры", "primary", {"cmd": "filters", "city": city})],
-                [_button("🏠 В начало", "secondary", {"cmd": "home"})],
-            ], inline=False)
-            if isinstance(event_or_msg, MessageEvent):
-                await _edit(event_or_msg, text, kb)
-            else:
-                await _send(event_or_msg, text, kb)
-            return
-
-        stations_with_status = await get_stations_with_statuses(stations)
-        promoted_ids = set(await get_promoted_station_ids(city) or [])
-
-        def _sort_key(s):
-            statuses = s.get("statuses") or []
-            non_all = [st for st in statuses if st.get("fuel_type") != "all"]
-            has_available = any(st.get("available") is True for st in non_all)
-            has_low = any(st.get("available") is None for st in non_all)
-            has_unavailable = any(st.get("available") is False for st in non_all)
-            if has_available:
-                avail_rank = 0
-            elif has_low:
-                avail_rank = 1
-            elif has_unavailable:
-                avail_rank = 2
-            else:
-                avail_rank = 3
-            return (
-                0 if s["id"] in promoted_ids else 1,
-                avail_rank,
-                0 if s.get("is_verified") else 1,
-                (s.get("name") or "").lower(),
-            )
-        stations_with_status.sort(key=_sort_key)
-
-        title = f"⛽ <b>{city}</b> — {len(stations_with_status)} АЗС\n"
-        rows = []
-        for s in stations_with_status[:5]:
-            statuses = s.get("statuses", [])
-            name = (s.get("name") or "АЗС")[:22]
-            has_available = any(st.get("available") is True and st.get("fuel_type") != "all" for st in statuses)
-            has_unavailable = any(st.get("available") is False and st.get("fuel_type") != "all" for st in statuses)
-            icon = "✅" if has_available else ("❌" if has_unavailable else ("⚠️" if s.get("has_data") else "❓"))
-            rows.append([_button(f"{icon} {name}"[:40], "primary", {"cmd": "st", "id": s["id"]})])
-
-        rows.append([_button("🚨 Экстренный", "negative", {"cmd": "emergency", "city": city})])
-        rows.append([_button("🔄 Фильтры", "secondary", {"cmd": "filters", "city": city})])
-        rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
-        kb = vk_keyboard(_limit_rows(rows), inline=False)
-
-        if isinstance(event_or_msg, MessageEvent):
-            await _edit(event_or_msg, title, kb)
-        else:
-            await _send(event_or_msg, title, kb)
-    except Exception as e:
-        logger.exception(f"_show_station_list: {e}")
-        text = f"⚠️ Ошибка при загрузке"
-        if isinstance(event_or_msg, MessageEvent):
-            await _snackbar(event_or_msg, text)
-        else:
-            await _send(event_or_msg, text, vk_main_menu())
-
-
-async def handle_station_detail(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-
-    uid = await _ensure_user_from_event(event)
-    if uid:
-        await log_event(uid, "vk_station_viewed", {"station_id": station_id})
-
-    station = await get_station_by_id(station_id)
-    if not station:
-        await _snackbar(event, "АЗС не найдена")
-        return
-
-    statuses = await get_station_current_status(station_id)
-    text = format_station_card(station, statuses)
-    kb = vk_station_actions(station_id, lat=station.get("lat"), lon=station.get("lon"))
-
-    if uid and await is_owner_of_station(uid, station_id):
-        from db import is_station_promoted, get_owner_station_by_user_and_station, PROMO_PRICE_STARS
-        owner_station = await get_owner_station_by_user_and_station(uid, station_id)
-        if owner_station:
-            is_promo = await is_station_promoted(station_id)
-            promo_text = "🌟 Продвижение активно" if is_promo else f"🌟 Продвинуть ({PROMO_PRICE_STARS}⭐)"
-            kb = vk_keyboard([
-                [_button(promo_text[:40], "positive", {"cmd": "promote", "id": station_id})],
-                [_button("📝 Сообщить", "positive", {"cmd": "report_start", "id": station_id})],
-                [_button("🔔 Подписаться", "primary", {"cmd": "sub_station", "id": station_id})],
-                [_button("◀️ Назад", "secondary", {"cmd": "back_to_list"})],
-                [_button("🏠 В начало", "secondary", {"cmd": "home"})],
-            ], inline=False)
-
-    await _edit(event, text, kb)
-    await _snackbar(event, "✅")
-
-
-async def handle_station_list_back(event: MessageEvent):
-    await _edit(event, "🔍 Нажми «🔍 Найти АЗС» или напиши город.", vk_main_menu())
-
-
-async def handle_report_start(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    await _edit(event, "⛽ <b>Выбери тип топлива:</b>", vk_fuel_type_keyboard(station_id))
-
-
-async def handle_report_fuel(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    fuel = payload.get("fuel", "")
-    await _edit(event, f"⛽ <b>АИ-{fuel}</b> — какой статус?", vk_report_status_keyboard(station_id, fuel))
-
-
-async def handle_report_submit(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    fuel = payload.get("fuel", "")
-    status = payload.get("status", "")
-
-    available_map = {"yes": True, "low": None, "no": False}
-    if status not in available_map:
-        await _snackbar(event, "Неизвестный статус")
-        return
-
-    uid = await _ensure_user_from_event(event)
-    if uid:
-        await add_report(
-            station_id=station_id, user_id=uid, fuel_type=fuel,
-            available=available_map[status], queue_size=None, source="user",
-        )
-
-    status_text = {"yes": "✅ Есть", "low": "⚠️ Кончается", "no": "❌ Нет"}[status]
-    await _edit(
-        event,
-        f"✅ <b>Отчёт записан.</b>\n\nАЗС #{station_id}, АИ-{fuel}: {status_text}",
-        vk_main_menu(),
-    )
-
-
-async def handle_report_city_menu(event: MessageEvent):
-    await _edit(event, "📝 <b>Выбери город:</b>", vk_report_city_keyboard())
-
-
-async def handle_report_city(event: MessageEvent):
-    payload = _parse_payload(event)
-    city = payload.get("city", "")
-    if city == "other":
-        _user_state[_uid_from_event(event)] = {"awaiting": "report_city_input"}
-        await _snackbar(event, "✏️ Напиши название города")
-        return
-    stations = await find_stations_by_city(city=city, has_stock=None, limit=5)
-    if not stations:
-        await _edit(event, f"😔 В <b>{city}</b> АЗС не найдены.", vk_main_menu())
-        return
-    await _edit(event, f"⛽ <b>Выбери АЗС в {city}:</b>", vk_report_station_keyboard(stations))
-
-
-async def handle_report_pick(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    await _edit(event, "⛽ <b>Выбери тип топлива:</b>", vk_fuel_type_keyboard(station_id))
-
-
-async def _do_emergency(event_or_msg, city: str):
-    try:
-        stations = await find_stations_by_city(city=city, has_stock=False, limit=50)
-        if not stations:
-            text = f"🚨 <b>{city}</b>\n\n❌ Нет данных."
-            if isinstance(event_or_msg, MessageEvent):
-                await _edit(event_or_msg, text, vk_main_menu())
-            else:
-                await _send(event_or_msg, text, vk_main_menu())
-            return
-
-        stations_with_status = await get_stations_with_statuses(stations)
-        stations_with_status = [s for s in stations_with_status if any(
-            st.get("available") is not False and st.get("fuel_type") != "all"
-            for st in (s.get("statuses") or [])
-        )]
-
-        if not stations_with_status:
-            text = f"🚨 <b>{city}</b>\n\n❌ Нет данных о наличии."
-            if isinstance(event_or_msg, MessageEvent):
-                await _edit(event_or_msg, text, vk_main_menu())
-            else:
-                await _send(event_or_msg, text, vk_main_menu())
-            return
-
-        lines = [f"🚨 <b>{city}</b> — {len(stations_with_status)} АЗС\n"]
-        rows = []
-        for s in stations_with_status[:5]:
-            statuses = s.get("statuses", [])
-            name = (s.get("name") or "АЗС")[:22]
-            operator = (s.get("operator") or "")[:14]
-            best = None
-            for st in statuses:
-                if st.get("available") is True and st.get("fuel_type") != "all":
-                    if not best or (st.get("price") is not None and (best.get("price") is None or st["price"] < best["price"])):
-                        best = st
-            short = f"{name} · {operator}" if operator and operator != name else name
-            if best and best.get("price") is not None:
-                short += f" · АИ-{best.get('fuel_type', '?')} {best['price']:.0f}₽"
-            elif best:
-                short += f" · АИ-{best.get('fuel_type', '?')} ✅"
-            rows.append([_button(short[:40], "primary", {"cmd": "st", "id": s["id"]})])
-
-        rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
-        kb = vk_keyboard(_limit_rows(rows), inline=False)
-        text = "\n".join(lines)
-        if isinstance(event_or_msg, MessageEvent):
-            await _edit(event_or_msg, text, kb)
-        else:
-            await _send(event_or_msg, text, kb)
-    except Exception as e:
-        logger.exception(f"_do_emergency: {e}")
-        if isinstance(event_or_msg, MessageEvent):
-            await _snackbar(event_or_msg, "⚠️ Ошибка")
-        else:
-            await _send(event_or_msg, "⚠️ Ошибка", vk_main_menu())
-
-
-async def handle_subscribe_radius(event: MessageEvent):
-    payload = _parse_payload(event)
-    radius = payload.get("radius", 5)
-    uid = _uid_from_event(event)
-    state = _user_state.get(uid, {})
-    lat = state.get("lat")
-    lon = state.get("lon")
-    if lat is None or lon is None:
-        await _snackbar(event, "Сначала отправь геолокацию")
-        return
-    user_db_id = await _ensure_user_from_event(event)
-    if user_db_id:
-        await add_subscription(user_id=user_db_id, lat=lat, lon=lon, radius_km=radius)
-    _user_state.pop(uid, None)
-    await _edit(
-        event,
-        f"🔔 <b>Подписка оформлена.</b>\n\n"
-        f"Радиус: {radius} км\nКоординаты: {lat:.4f}, {lon:.4f}\n\n"
-        f"Пришлю уведомление о завозе.",
-        vk_main_menu(),
-    )
-
-
-async def handle_sub_station(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    uid = await _ensure_user_from_event(event)
-    if uid:
-        await add_subscription(user_id=uid, station_id=station_id, radius_km=0)
-    await _snackbar(event, "🔔 Подписался на АЗС")
-
-
 async def handle_geo_location(msg: Message):
     uid = _uid(msg)
     state = _user_state.get(uid, {})
-
     geo = msg.geo
     if not geo:
-        await _send(msg, "⚠️ Не удалось определить координаты.")
+        await _send(msg, "⚠️ Не удалось определить координаты.", vk_main_menu())
         return
     lat = geo.coordinates.latitude
     lon = geo.coordinates.longitude
-
     if state.get("awaiting") == "subscribe_geo":
         _user_state[uid] = {"awaiting": "subscribe_radius", "lat": lat, "lon": lon}
         await _send(
@@ -693,7 +366,6 @@ async def handle_geo_location(msg: Message):
             vk_subscribe_radius_keyboard(),
         )
         return
-
     await _do_find_by_geo(msg, lat, lon)
 
 
@@ -702,11 +374,9 @@ async def _do_find_by_geo(msg: Message, lat: float, lon: float):
     stations = cached if cached is not None else await find_nearest_stations(lat=lat, lon=lon, limit=10, radius_km=30)
     if cached is None:
         _cache_set(lat, lon, 30, stations)
-
     if not stations:
         await _send(msg, "😔 <b>Рядом не нашёл АЗС.</b>\n\nПопробуй написать город.", vk_main_menu())
         return
-
     stations = await get_stations_with_statuses(stations)
     text = f"🔍 <b>Нашёл {len(stations)} АЗС рядом:</b>\n\n"
     rows = []
@@ -715,151 +385,9 @@ async def _do_find_by_geo(msg: Message, lat: float, lon: float):
         dist = format_distance(s.get("distance_km", 0))
         icon = _get_main_status_icon(statuses)
         name = (s.get("name") or "АЗС")[:22]
-        rows.append([_button(f"{icon} {name} • {dist}"[:40], "primary", {"cmd": "st", "id": s["id"]})])
-    rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
+        rows.append([_button(f"{icon} #{s['id']} {name} • {dist}"[:30], "primary")])
+    rows.append([_button("🏠 В начало", "secondary")])
     await _send(msg, text, vk_keyboard(_limit_rows(rows), inline=False))
-
-
-async def handle_owner_pick(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    uid = _uid_from_event(event)
-    _owner_waiting_role[uid] = station_id
-    station = await get_station_by_id(station_id)
-    name = station.get("name", "АЗС") if station else "АЗС"
-    operator = station.get("operator") or ""
-    header = f"⛽ <b>{name}</b>" + (f" ({operator})" if operator else "")
-    rows = [
-        [_button("👑 Я владелец", "primary", {"cmd": "owner_role", "role": "owner"})],
-        [_button("👨‍🔧 Я работник", "secondary", {"cmd": "owner_role", "role": "employee"})],
-        [_button("❌ Отменить", "secondary", {"cmd": "home"})],
-    ]
-    await _edit(event, f"{header}\n\nКто ты на этой АЗС?", vk_keyboard(rows, inline=False))
-
-
-async def handle_owner_role(event: MessageEvent):
-    payload = _parse_payload(event)
-    role = payload.get("role", "owner")
-    uid = _uid_from_event(event)
-    station_id = _owner_waiting_role.pop(uid, 0)
-    if not station_id:
-        await _snackbar(event, "Ошибка. Попробуй сначала.")
-        return
-    _owner_state_data[uid] = {"station_id": station_id, "role": role}
-    _owner_waiting_inn.add(uid)
-    station = await get_station_by_id(station_id)
-    name = station.get("name", "АЗС") if station else f"#{station_id}"
-    role_text = "владельцем" if role == "owner" else "работником"
-    rows = [[_button("⏭ Пропустить", "secondary", {"cmd": "owner_inn_skip"})]]
-    await _edit(
-        event,
-        f"⛽ <b>{name}</b> — <b>{role_text}</b>.\n\n📋 ИНН (опционально):",
-        vk_keyboard(rows, inline=False),
-    )
-
-
-async def handle_owner_inn_skip(event: MessageEvent):
-    uid = _uid_from_event(event)
-    _owner_waiting_inn.discard(uid)
-    state = _owner_state_data.pop(uid, {})
-    await _owner_finish(event, state.get("station_id", 0), state.get("role", "owner"), inn=None)
-
-
-async def _owner_finish(event: MessageEvent, station_id: int, role: str, inn: str | None = None):
-    uid = _uid_from_event(event)
-    user_db_id = await _ensure_user_from_event(event)
-    if not user_db_id:
-        await _edit(event, "Ошибка. Попробуй снова.", vk_main_menu())
-        return
-    result = await add_owner_station(user_id=user_db_id, station_id=station_id, inn=inn, role=role)
-    station = await get_station_by_id(station_id)
-    name = station.get("name", "АЗС") if station else f"#{station_id}"
-    role_text = "владелец" if role == "owner" else "работник"
-    if result == -1:
-        text = f"ℹ️ Ты уже зарегистрирован на «{name}»."
-    else:
-        text = f"✅ <b>Готово! {role_text} «{name}».</b>\n\nПосле модерации — ✓ Verified."
-    await _edit(event, text, vk_main_menu())
-
-
-async def handle_my_station(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    uid = await _ensure_user_from_event(event)
-    if not uid or not await is_owner_of_station(uid, station_id):
-        await _snackbar(event, "Это не твоя АЗС")
-        return
-    station = await get_station_by_id(station_id)
-    if not station:
-        await _snackbar(event, "АЗС не найдена")
-        return
-    statuses = await get_station_current_status(station_id)
-    text = "👤 <b>Твоя АЗС:</b>\n\n" + format_station_card(station, statuses)
-    rows = []
-    for fuel in ["92", "95", "98", "diesel"]:
-        rows.append([
-            _button(f"АИ-{fuel}: ✅", "positive", {"cmd": "oset", "id": station_id, "fuel": fuel, "status": "yes"}),
-            _button("⚠️", "secondary", {"cmd": "oset", "id": station_id, "fuel": fuel, "status": "low"}),
-            _button("❌", "negative", {"cmd": "oset", "id": station_id, "fuel": fuel, "status": "no"}),
-        ])
-    rows.append([_button("◀️ Назад", "secondary", {"cmd": "my_stations"})])
-    rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
-    await _edit(event, text, vk_keyboard(rows, inline=False))
-
-
-async def handle_owner_quick_set(event: MessageEvent):
-    payload = _parse_payload(event)
-    station_id = payload.get("id", 0)
-    fuel = payload.get("fuel", "")
-    status = payload.get("status", "")
-    uid = await _ensure_user_from_event(event)
-    if not uid or not await is_owner_of_station(uid, station_id):
-        await _snackbar(event, "Это не твоя АЗС")
-        return
-    available_map = {"yes": True, "low": None, "no": False}
-    if status not in available_map:
-        await _snackbar(event, "Неизвестный статус")
-        return
-    await add_report(station_id=station_id, user_id=uid, fuel_type=fuel, available=available_map[status], source="owner")
-    status_text = {"yes": "✅ есть", "low": "⚠️ кончается", "no": "❌ нет"}[status]
-    await _snackbar(event, f"АИ-{fuel} — {status_text}")
-
-
-async def handle_text_input(msg: Message):
-    uid = _uid(msg)
-    text = (msg.text or "").strip()
-    if len(text) < 2:
-        return
-
-    state = _user_state.pop(uid, {})
-
-    if state.get("awaiting") == "city_input":
-        await _show_station_list_from_msg(msg, text)
-        return
-
-    if state.get("awaiting") == "report_city_input":
-        stations = await find_stations_by_city(city=text, has_stock=None, limit=5)
-        if not stations:
-            await _send(msg, f"😔 В <b>{text}</b> АЗС не найдены.", vk_main_menu())
-            return
-        await _send(msg, f"⛽ <b>Выбери АЗС в {text}:</b>", vk_report_station_keyboard(stations))
-        return
-
-    if uid in _owner_waiting_search:
-        await _owner_search_handler(msg, text)
-        return
-
-    if uid in _owner_waiting_inn:
-        inn = text.strip()
-        if inn and not inn.isdigit():
-            await _send(msg, "ИНН — только цифры. Попробуй ещё раз.")
-            return
-        _owner_waiting_inn.discard(uid)
-        state = _owner_state_data.pop(uid, {})
-        await _owner_finish_text(msg, state.get("station_id", 0), state.get("role", "owner"), inn=inn or None)
-        return
-
-    await _do_text_search(msg, text)
 
 
 async def _show_station_list_from_msg(msg: Message, city: str, fuel=None):
@@ -870,38 +398,16 @@ async def _show_station_list_from_msg(msg: Message, city: str, fuel=None):
             return
         stations_with_status = await get_stations_with_statuses(stations)
         promoted_ids = set(await get_promoted_station_ids(city) or [])
-
-        def _sort_key(s):
-            statuses = s.get("statuses") or []
-            non_all = [st for st in statuses if st.get("fuel_type") != "all"]
-            has_available = any(st.get("available") is True for st in non_all)
-            has_low = any(st.get("available") is None for st in non_all)
-            has_unavailable = any(st.get("available") is False for st in non_all)
-            if has_available:
-                avail_rank = 0
-            elif has_low:
-                avail_rank = 1
-            elif has_unavailable:
-                avail_rank = 2
-            else:
-                avail_rank = 3
-            return (
-                0 if s["id"] in promoted_ids else 1,
-                avail_rank,
-                0 if s.get("is_verified") else 1,
-                (s.get("name") or "").lower(),
-            )
-        stations_with_status.sort(key=_sort_key)
-
+        stations_with_status.sort(key=lambda s: _sort_key(s, promoted_ids))
         title = f"⛽ <b>{city}</b> — {len(stations_with_status)} АЗС\n"
         rows = []
         for s in stations_with_status[:5]:
             statuses = s.get("statuses", [])
             name = (s.get("name") or "АЗС")[:22]
             icon = _get_main_status_icon(statuses)
-            rows.append([_button(f"{icon} {name}"[:40], "primary", {"cmd": "st", "id": s["id"]})])
-        rows.append([_button("🚨 Экстренный", "negative", {"cmd": "emergency", "city": city})])
-        rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
+            rows.append([_button(f"{icon} #{s['id']} {name}"[:40], "primary")])
+        rows.append([_button("🚨 Экстренный", "negative")])
+        rows.append([_button("🏠 В начало", "secondary")])
         await _send(msg, title, vk_keyboard(_limit_rows(rows), inline=False))
     except Exception as e:
         logger.exception(f"_show_station_list_from_msg: {e}")
@@ -928,9 +434,9 @@ async def _do_text_search(msg: Message, query: str):
         icon = _get_main_status_icon(statuses)
         name = (s.get("name") or "АЗС")[:25]
         city = (s.get("city") or "")[:12]
-        btn_text = f"{icon} {name}" + (f" • {city}" if city else "")
-        rows.append([_button(btn_text[:40], "primary", {"cmd": "st", "id": s["id"]})])
-    rows.append([_button("🏠 В начало", "secondary", {"cmd": "home"})])
+        btn_text = f"{icon} #{s['id']} {name}" + (f" • {city}" if city else "")
+        rows.append([_button(btn_text[:40], "primary")])
+    rows.append([_button("🏠 В начало", "secondary")])
     await _send(msg, text, vk_keyboard(_limit_rows(rows), inline=False))
 
 
@@ -941,11 +447,12 @@ async def _owner_search_handler(msg: Message, query: str):
     if not stations:
         await _send(msg, f"😔 По «{query}» ничего не нашёл.", vk_main_menu())
         return
+    _user_state[uid] = {"owner_pick_flow": True}
     rows = []
     for s in stations:
         name = (s.get("name") or "АЗС")[:25]
-        rows.append([_button(f"⛽ {name}"[:40], "primary", {"cmd": "owner_pick", "id": s["id"]})])
-    rows.append([_button("❌ Отменить", "secondary", {"cmd": "home"})])
+        rows.append([_button(f"#{s['id']} {name}"[:40], "primary")])
+    rows.append([_button("❌ Отменить", "secondary")])
     await _send(msg, f"🔍 Нашёл <b>{len(stations)}</b> АЗС:", vk_keyboard(_limit_rows(rows), inline=False))
 
 
@@ -954,6 +461,7 @@ async def _owner_finish_text(msg: Message, station_id: int, role: str, inn: str 
     _owner_state_data.pop(uid, None)
     _owner_waiting_role.pop(uid, None)
     _owner_waiting_inn.discard(uid)
+    _user_state.pop(uid, None)
     user_db_id = await _ensure_user(msg)
     if not user_db_id:
         await _send(msg, "Ошибка. Попробуй снова.", vk_main_menu())
@@ -969,8 +477,84 @@ async def _owner_finish_text(msg: Message, station_id: int, role: str, inn: str 
     await _send(msg, text, vk_main_menu())
 
 
+async def handle_station_detail_text(msg: Message, station_id: int):
+    uid = _uid(msg)
+    try:
+        user_db_id = await get_or_create_user(msg)
+        if user_db_id:
+            await log_event(user_db_id, "vk_station_viewed", {"station_id": station_id})
+    except Exception:
+        pass
+    station = await get_station_by_id(station_id)
+    if not station:
+        await _send(msg, "АЗС не найдена", vk_main_menu())
+        return
+    statuses = await get_station_current_status(station_id)
+    text = format_station_card(station, statuses)
+    kb = vk_station_actions(station_id, lat=station.get("lat"), lon=station.get("lon"))
+    await _send(msg, text, kb)
+
+
+async def handle_report_submit_text(msg: Message, station_id: int, fuel: str, status: str):
+    available_map = {"yes": True, "low": None, "no": False}
+    if status not in available_map:
+        await _send(msg, "Неизвестный статус", vk_main_menu())
+        return
+    try:
+        user_db_id = await get_or_create_user(msg)
+        if user_db_id:
+            await add_report(
+                station_id=station_id, user_id=user_db_id, fuel_type=fuel,
+                available=available_map[status], queue_size=None, source="user",
+            )
+    except Exception as e:
+        logger.warning("report_submit failed: %s", e)
+    status_text = {"yes": "✅ Есть", "low": "⚠️ Кончается", "no": "❌ Нет"}[status]
+    await _send(msg, f"✅ Отчёт записан.\n\nАЗС #{station_id}, АИ-{fuel}: {status_text}", vk_main_menu())
+
+
+async def handle_subscribe_radius_text(msg: Message, radius: int):
+    uid = _uid(msg)
+    state = _user_state.get(uid, {})
+    lat = state.get("lat")
+    lon = state.get("lon")
+    if lat is None or lon is None:
+        await _send(msg, "Сначала отправь геолокацию", vk_subscribe_geo_keyboard())
+        return
+    try:
+        user_db_id = await get_or_create_user(msg)
+        if user_db_id:
+            await add_subscription(user_id=user_db_id, lat=lat, lon=lon, radius_km=radius)
+    except Exception:
+        pass
+    _user_state.pop(uid, None)
+    await _send(
+        msg,
+        f"🔔 Подписка оформлена.\n\nРадиус: {radius} км\nКоординаты: {lat:.4f}, {lon:.4f}\n\nПришлю уведомление о завозе.",
+        vk_main_menu(),
+    )
+
+
+async def handle_report_city_text(msg: Message, city: str):
+    stations = await find_stations_by_city(city=city, has_stock=None, limit=5)
+    if not stations:
+        await _send(msg, f"😔 В {city} АЗС не найдены.", vk_main_menu())
+        return
+    await _send(msg, f"⛽ Выбери АЗС в {city}:", vk_report_station_keyboard(stations))
+
+
+async def handle_sub_station_text(msg: Message, station_id: int):
+    try:
+        user_db_id = await get_or_create_user(msg)
+        if user_db_id:
+            await add_subscription(user_id=user_db_id, station_id=station_id, radius_km=0)
+    except Exception:
+        pass
+    await _send(msg, "🔔 Подписался на АЗС", vk_main_menu())
+
+
 # ====================================================================
-# TEXT-BASED HANDLERS (Message-based, no callback needed)
+# PAGINATION KEYBOARDS
 # ====================================================================
 
 def _station_list_keyboard(stations_page: list, total: int, page: int, pages: int) -> str:
@@ -979,13 +563,11 @@ def _station_list_keyboard(stations_page: list, total: int, page: int, pages: in
     for s in stations_page:
         statuses = s.get("statuses", [])
         name = (s.get("name") or "АЗС")[:20]
-        operator = (s.get("operator") or "")[:12]
         has_available = any(st.get("available") is True and st.get("fuel_type") != "all" for st in statuses)
         has_unavailable = any(st.get("available") is False and st.get("fuel_type") != "all" for st in statuses)
         icon = "✅" if has_available else ("❌" if has_unavailable else ("⚠️" if s.get("has_data") else "❓"))
         label = f"{icon} #{s['id']} {name}"[:30]
         rows.append([_button(label, "primary")])
-
     nav = []
     if page > 0:
         nav.append(_button("⬅️ Назад", "secondary"))
@@ -993,7 +575,6 @@ def _station_list_keyboard(stations_page: list, total: int, page: int, pages: in
         nav.append(_button("Далее ➡️", "secondary"))
     if nav:
         rows.append(nav)
-
     rows.append([_button("🚨 Экстренный", "negative"), _button("🏭 Сеть", "secondary")])
     rows.append([_button("🔄 Фильтры", "secondary"), _button(VK_BTN_HOME)])
     return vk_keyboard(rows)
@@ -1057,30 +638,8 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None,
             return
 
         stations_with_status = await get_stations_with_statuses(stations)
-
         promoted_ids = set(await get_promoted_station_ids(city) or [])
-
-        def _sort_key(s):
-            statuses = s.get("statuses") or []
-            non_all = [st for st in statuses if st.get("fuel_type") != "all"]
-            has_available = any(st.get("available") is True for st in non_all)
-            has_low = any(st.get("available") is None for st in non_all)
-            has_unavailable = any(st.get("available") is False for st in non_all)
-            if has_available:
-                avail_rank = 0
-            elif has_low:
-                avail_rank = 1
-            elif has_unavailable:
-                avail_rank = 2
-            else:
-                avail_rank = 3
-            return (
-                0 if s["id"] in promoted_ids else 1,
-                avail_rank,
-                0 if s.get("is_verified") else 1,
-                (s.get("name") or "").lower(),
-            )
-        stations_with_status.sort(key=_sort_key)
+        stations_with_status.sort(key=lambda s: _sort_key(s, promoted_ids))
 
         PAGE_SIZE = 3
         total = len(stations_with_status)
@@ -1097,99 +656,15 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None,
         await _send(msg, title, kb)
 
         uid = _uid(msg)
+        old = _user_state.get(uid, {})
         _user_state[uid] = {
+            **old,
             "city": city, "fuel": fuel, "network": network,
-            "page": page, "stations": stations_with_status,
+            "page": page,
         }
     except Exception as e:
         logger.exception("[cmd_find_stations] FAILED: %s", e)
-        err_msg = f"⚠️ Ошибка: {type(e).__name__}: {str(e)[:100]}"
-        await _send(msg, err_msg, vk_main_menu())
-
-
-async def handle_station_detail_text(msg: Message, station_id: int):
-    """Show station detail — text-based."""
-    uid = _uid(msg)
-    try:
-        user_db_id = await get_or_create_user(msg)
-        if user_db_id:
-            await log_event(user_db_id, "vk_station_viewed", {"station_id": station_id})
-    except Exception:
-        pass
-
-    station = await get_station_by_id(station_id)
-    if not station:
-        await _send(msg, "АЗС не найдена", vk_main_menu())
-        return
-
-    statuses = await get_station_current_status(station_id)
-    text = format_station_card(station, statuses)
-    kb = vk_station_actions(station_id, lat=station.get("lat"), lon=station.get("lon"))
-    await _send(msg, text, kb)
-
-
-async def handle_report_submit_text(msg: Message, station_id: int, fuel: str, status: str):
-    """Submit report — text-based."""
-    available_map = {"yes": True, "low": None, "no": False}
-    if status not in available_map:
-        await _send(msg, "Неизвестный статус", vk_main_menu())
-        return
-
-    try:
-        user_db_id = await get_or_create_user(msg)
-        if user_db_id:
-            await add_report(
-                station_id=station_id, user_id=user_db_id, fuel_type=fuel,
-                available=available_map[status], queue_size=None, source="user",
-            )
-    except Exception as e:
-        logger.warning("report_submit failed: %s", e)
-
-    status_text = {"yes": "✅ Есть", "low": "⚠️ Кончается", "no": "❌ Нет"}[status]
-    await _send(msg, f"✅ Отчёт записан.\n\nАЗС #{station_id}, АИ-{fuel}: {status_text}", vk_main_menu())
-
-
-async def handle_subscribe_radius_text(msg: Message, radius: int):
-    """Subscribe with radius — text-based."""
-    uid = _uid(msg)
-    state = _user_state.get(uid, {})
-    lat = state.get("lat")
-    lon = state.get("lon")
-    if lat is None or lon is None:
-        await _send(msg, "Сначала отправь геолокацию", vk_subscribe_geo_keyboard())
-        return
-    try:
-        user_db_id = await get_or_create_user(msg)
-        if user_db_id:
-            await add_subscription(user_id=user_db_id, lat=lat, lon=lon, radius_km=radius)
-    except Exception:
-        pass
-    _user_state.pop(uid, None)
-    await _send(
-        msg,
-        f"🔔 Подписка оформлена.\n\nРадиус: {radius} км\nКоординаты: {lat:.4f}, {lon:.4f}\n\nПришлю уведомление о завозе.",
-        vk_main_menu(),
-    )
-
-
-async def handle_report_city_text(msg: Message, city: str):
-    """Report city selected — show stations."""
-    stations = await find_stations_by_city(city=city, has_stock=None, limit=5)
-    if not stations:
-        await _send(msg, f"😔 В {city} АЗС не найдены.", vk_main_menu())
-        return
-    await _send(msg, f"⛽ Выбери АЗС в {city}:", vk_report_station_keyboard(stations))
-
-
-async def handle_sub_station_text(msg: Message, station_id: int):
-    """Subscribe to station — text-based."""
-    try:
-        user_db_id = await get_or_create_user(msg)
-        if user_db_id:
-            await add_subscription(user_id=user_db_id, station_id=station_id, radius_km=0)
-    except Exception:
-        pass
-    await _send(msg, "🔔 Подписался на АЗС", vk_main_menu())
+        await _send(msg, "⚠️ Произошла ошибка. Попробуй /start", vk_main_menu())
 
 
 # ====================================================================
@@ -1214,7 +689,6 @@ async def run_vk_bot():
         logger.exception(f"run_vk_bot() CRASH during init: {e}")
         return
 
-    # Text handlers — exact match for known patterns
     @bot.on.message(text=["/start", "start"])
     async def on_start(msg: Message):
         await cmd_start(msg)
@@ -1264,6 +738,7 @@ async def run_vk_bot():
                 return
             if msg.text:
                 text = msg.text.strip()
+                uid = _uid(msg)
                 logger.info("VK text: %r", text)
 
                 # --- Main menu buttons ---
@@ -1271,6 +746,8 @@ async def run_vk_bot():
                     await cmd_find(msg)
                     return
                 if "Сообщить" in text:
+                    old = _user_state.get(uid, {})
+                    _user_state[uid] = {**old, "report_city_flow": True}
                     await _send(msg, "📝 Выбери город:", vk_report_city_keyboard())
                     return
                 if "Уведомлени" in text:
@@ -1295,24 +772,61 @@ async def run_vk_bot():
                     await cmd_help(msg)
                     return
                 if "В начало" in text or text == "/start" or text == "start":
+                    _owner_waiting_search.discard(uid)
+                    _owner_waiting_role.pop(uid, None)
+                    _owner_waiting_inn.discard(uid)
+                    _owner_state_data.pop(uid, None)
+                    _user_state.pop(uid, None)
                     await cmd_start(msg)
+                    return
+
+                # --- Owner role selection ---
+                if uid in _owner_waiting_role and ("Я владелец" in text or "Я работник" in text):
+                    role = "owner" if "владелец" in text else "employee"
+                    station_id = _owner_waiting_role.pop(uid, 0)
+                    if not station_id:
+                        await _send(msg, "Ошибка. Попробуй сначала.", vk_main_menu())
+                        return
+                    _owner_state_data[uid] = {"station_id": station_id, "role": role}
+                    _owner_waiting_inn.add(uid)
+                    station = await get_station_by_id(station_id)
+                    name = station.get("name", "АЗС") if station else f"#{station_id}"
+                    role_text = "владельцем" if role == "owner" else "работником"
+                    rows = [[_button("⏭ Пропустить", "secondary")]]
+                    await _send(
+                        msg,
+                        f"⛽ <b>{name}</b> — <b>{role_text}</b>.\n\n📋 ИНН (опционально):",
+                        vk_keyboard(rows, inline=False),
+                    )
+                    return
+
+                # --- Owner INN skip ---
+                if uid in _owner_waiting_inn and "Пропустить" in text:
+                    _owner_waiting_inn.discard(uid)
+                    state = _owner_state_data.pop(uid, {})
+                    await _owner_finish_text(msg, state.get("station_id", 0), state.get("role", "owner"), inn=None)
                     return
 
                 # --- City selection: "📍 Иваново" ---
                 if text.startswith("📍"):
                     city = text.replace("📍", "").strip()
                     if city and city != "Другой город":
-                        _user_state[msg.peer_id] = {"city": city}
-                        await cmd_find_stations(msg, city)
+                        state = _user_state.get(uid, {})
+                        if state.get("report_city_flow"):
+                            _user_state.pop(uid, None)
+                            await handle_report_city_text(msg, city)
+                        else:
+                            _user_state[uid] = {"city": city}
+                            await cmd_find_stations(msg, city)
                         return
 
-                # --- Pagination: "Далее ➡️" / "⬅️ Назад" ---
-                if "Далее" in text or "Назад" in text and "К списку" not in text:
-                    state = _user_state.get(msg.peer_id, {})
+                # --- Pagination: exact match ---
+                if text in ("Далее ➡️", "⬅️ Назад"):
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     if city:
                         page = state.get("page", 0)
-                        if "Далее" in text:
+                        if text == "Далее ➡️":
                             page += 1
                         else:
                             page -= 1
@@ -1324,10 +838,10 @@ async def run_vk_bot():
 
                 # --- Network filter: "🏭 Сеть" ---
                 if text == "🏭 Сеть" or text == "🏭 сеть":
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
-                    stations = state.get("stations", [])
-                    if city and stations:
+                    if city:
+                        stations = await find_stations_by_city(city=city, has_stock=None, limit=50)
                         networks = []
                         seen = set()
                         for s in stations:
@@ -1335,8 +849,11 @@ async def run_vk_bot():
                             if op and op not in seen:
                                 seen.add(op)
                                 networks.append(op)
-                        kb = _network_filter_keyboard(networks[:6], city)
-                        await _send(msg, f"🏭 Выбери сеть АЗС в {city}:", kb)
+                        if networks:
+                            kb = _network_filter_keyboard(networks[:6], city)
+                            await _send(msg, f"🏭 Выбери сеть АЗС в {city}:", kb)
+                        else:
+                            await _send(msg, f"🏭 В {city} нет данных о сетях.", vk_main_menu())
                     else:
                         await _send(msg, "Сначала найди АЗС", vk_main_menu())
                     return
@@ -1344,7 +861,7 @@ async def run_vk_bot():
                 # --- Network filter select: "🏭 Лукойл" etc ---
                 if text.startswith("🏭 ") and text != "🏭 Все сети":
                     network_name = text.replace("🏭", "").strip()
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     if city:
                         await cmd_find_stations(msg, city, fuel=state.get("fuel"),
@@ -1355,7 +872,7 @@ async def run_vk_bot():
 
                 # --- Network filter clear: "🏭 Все сети" ---
                 if text == "🏭 Все сети":
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     if city:
                         await cmd_find_stations(msg, city, fuel=state.get("fuel"))
@@ -1363,20 +880,21 @@ async def run_vk_bot():
                         await _send(msg, "Сначала выбери город", vk_city_keyboard())
                     return
 
-                # --- Back to list: "⬅️ К списку" ---
+                # --- Back to list: "⬅️ К списку" / "◀️ Назад к списку" ---
                 if "К списку" in text:
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     if city:
                         await cmd_find_stations(msg, city, fuel=state.get("fuel"),
-                                                network=state.get("network"))
+                                                network=state.get("network"),
+                                                page=state.get("page", 0))
                     else:
                         await _send(msg, "Сначала выбери город", vk_city_keyboard())
                     return
 
                 # --- Filters ---
                 if "Фильтры" in text:
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     if city:
                         await _send(msg, f"Фильтры для {city}:", vk_filters_keyboard(city))
@@ -1384,13 +902,12 @@ async def run_vk_bot():
                         await _send(msg, "Сначала выбери город", vk_city_keyboard())
                     return
 
-                # --- Fuel filter: "⛽ АИ-92" ---
-                if text.startswith("⛽ АИ-") or text.startswith("🛢 Дизель"):
-                    state = _user_state.get(msg.peer_id, {})
+                # --- Fuel filter: "⛽ АИ-92" (no #id — station buttons have #id) ---
+                if not re.search(r"#\d+", text) and (text.startswith("⛽ АИ-") or text.startswith("🛢 Дизель")):
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     fuel_map = {
                         "АИ-92": "92", "АИ-95": "95", "АИ-98": "98", "Дизель": "diesel",
-                        "92": "92", "95": "95", "98": "98", "ДТ": "diesel",
                     }
                     fuel = None
                     for key, val in fuel_map.items():
@@ -1407,7 +924,7 @@ async def run_vk_bot():
 
                 # --- Emergency ---
                 if "Экстренный" in text:
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
                     city = state.get("city", "")
                     if city:
                         await cmd_find_stations(msg, city, emergency=True)
@@ -1415,48 +932,60 @@ async def run_vk_bot():
                         await _send(msg, "Сначала выбери город", vk_city_keyboard())
                     return
 
-                # --- Station detail: "#123 ..." ---
+                # --- #id detection (station detail, fuel report, status, owner pick) ---
                 st_match = re.search(r"#(\d+)", text)
                 if st_match:
                     station_id = int(st_match.group(1))
-                    # Check context for what action
-                    state = _user_state.get(msg.peer_id, {})
+                    state = _user_state.get(uid, {})
 
+                    # Fuel type for report: "⛽ 92 #123" (explicit fuel button)
+                    fuel_btn_match = re.match(r"[⛽🛢]\s*(\d+|ДТ|Дизель)\s+#\d+", text)
+                    if fuel_btn_match:
+                        fuel_text = fuel_btn_match.group(1)
+                        fuel_map = {"92": "92", "95": "95", "98": "98", "ДТ": "diesel", "Дизель": "diesel"}
+                        fuel = fuel_map.get(fuel_text)
+                        if fuel:
+                            _user_state[uid] = {"report_station": station_id, "report_fuel": fuel}
+                            await _send(msg, "Статус наличия:", vk_report_status_keyboard(station_id, fuel))
+                        return
+
+                    # Status for report: "✅ Есть #123:92"
+                    status_match = re.search(r"(✅|⚠️|❌)\s+\S+\s+#(\d+):(\w+)", text)
+                    if status_match:
+                        emoji, sid, fuel = status_match.groups()
+                        status_map = {"✅": "yes", "⚠️": "low", "❌": "no"}
+                        status = status_map.get(emoji, "yes")
+                        await handle_report_submit_text(msg, int(sid), fuel, status)
+                        return
+
+                    # Report start from station actions
                     if "Отчёт" in text or "report" in text.lower():
-                        # Report start for this station
-                        _user_state[msg.peer_id] = {"report_station": station_id}
+                        _user_state[uid] = {"report_station": station_id}
                         await _send(msg, "Выбери тип топлива:", vk_fuel_type_keyboard(station_id))
                         return
 
+                    # Subscribe from station actions
                     if "Подписка" in text or "sub" in text.lower():
                         await handle_sub_station_text(msg, station_id)
                         return
 
-                    # Fuel type for report: "⛽ 92 #123" or "🛢 ДТ #123"
-                    if ("92" in text or "95" in text or "98" in text or "ДТ" in text or "Дизель" in text) and "Отчёт" not in text and "Подписка" not in text:
-                        fuel_map = {"92": "92", "95": "95", "98": "98", "ДТ": "diesel", "Дизель": "diesel"}
-                        fuel = None
-                        for key, val in fuel_map.items():
-                            if key in text:
-                                fuel = val
-                                break
-                        if fuel:
-                            _user_state[msg.peer_id] = {"report_station": station_id, "report_fuel": fuel}
-                            await _send(msg, "Статус наличия:", vk_report_status_keyboard(station_id, fuel))
+                    # Owner pick flow
+                    if state.get("owner_pick_flow"):
+                        _user_state.pop(uid, None)
+                        _owner_waiting_role[uid] = station_id
+                        station = await get_station_by_id(station_id)
+                        name = station.get("name", "АЗС") if station else "АЗС"
+                        operator = station.get("operator") or ""
+                        header = f"⛽ <b>{name}</b>" + (f" ({operator})" if operator else "")
+                        rows = [
+                            [_button("👑 Я владелец", "primary"), _button("👨\u200d🔧 Я работник", "secondary")],
+                            [_button("❌ Отменить", "secondary")],
+                        ]
+                        await _send(msg, f"{header}\n\nКто ты на этой АЗС?", vk_keyboard(rows, inline=False))
                         return
 
-                    # Station detail
+                    # Default: station detail
                     await handle_station_detail_text(msg, station_id)
-                    return
-
-                # --- Report status: "✅ Есть #123:92" / "❌ Нет #123:95" ---
-                status_match = re.search(r"(✅|⚠️|❌)\s+\S+\s+#(\d+):(\w+)", text)
-                if status_match:
-                    emoji, sid, fuel = status_match.groups()
-                    status_map = {"✅": "yes", "⚠️": "low", "❌": "no"}
-                    status = status_map.get(emoji, "yes")
-                    station_id = int(sid)
-                    await handle_report_submit_text(msg, station_id, fuel, status)
                     return
 
                 # --- Radius: "3 км" / "5 км" / "10 км" ---
@@ -1466,43 +995,43 @@ async def run_vk_bot():
                     await handle_subscribe_radius_text(msg, radius)
                     return
 
-                # --- Back to list ---
-                if "Назад к списку" in text:
-                    state = _user_state.get(msg.peer_id, {})
-                    city = state.get("city", "")
-                    if city:
-                        await cmd_find_stations(msg, city, fuel=state.get("fuel"),
-                                                network=state.get("network"), page=state.get("page", 0))
-                    else:
-                        await cmd_start(msg)
-                    return
-
                 # --- Other city ---
                 if "Другой город" in text:
-                    _user_state[msg.peer_id] = {"awaiting_city": True}
+                    state = _user_state.get(uid, {})
+                    if state.get("report_city_flow"):
+                        _user_state[uid] = {**state, "awaiting_report_city": True}
+                    else:
+                        _user_state[uid] = {"awaiting_city": True}
                     await _send(msg, "✏️ Введи название города:")
                     return
 
                 # --- Cancel / back ---
                 if "Отмена" in text or "Назад" in text:
+                    _owner_waiting_search.discard(uid)
+                    _owner_waiting_role.pop(uid, None)
+                    _owner_waiting_inn.discard(uid)
+                    _owner_state_data.pop(uid, None)
+                    _user_state.pop(uid, None)
                     await cmd_start(msg)
                     return
 
-                # --- Пробный период / Купить ---
+                # --- Premium ---
                 if "пробн" in text.lower() or "купить" in text.lower():
                     await cmd_premium(msg)
                     return
 
                 # --- Awaiting city input ---
-                state = _user_state.get(msg.peer_id, {})
+                state = _user_state.get(uid, {})
                 if state.get("awaiting_city"):
+                    _user_state.pop(uid, None)
                     city = text.strip()
-                    _user_state[msg.peer_id] = {"city": city}
+                    _user_state[uid] = {"city": city}
                     await cmd_find_stations(msg, city)
                     return
 
                 # --- Awaiting report city input ---
                 if state.get("awaiting_report_city"):
+                    _user_state.pop(uid, None)
                     city = text.strip()
                     await handle_report_city_text(msg, city)
                     return
@@ -1511,9 +1040,51 @@ async def run_vk_bot():
         except Exception as e:
             logger.exception("VK handler CRASH: %s", e)
             try:
-                await _send(msg, "⚠️ Ошибка. Попробуй /start", vk_main_menu())
+                await _send(msg, "⚠️ Произошла ошибка. Попробуй /start", vk_main_menu())
             except Exception:
                 pass
+
+    # ====================================================================
+    # TEXT-BASED HANDLERS (Message-based, no callback needed)
+    # ====================================================================
+
+    async def handle_text_input(msg: Message):
+        uid = _uid(msg)
+        text = (msg.text or "").strip()
+        if len(text) < 2:
+            return
+
+        state = _user_state.get(uid, {})
+
+        if state.get("awaiting") == "city_input":
+            _user_state.pop(uid, None)
+            await _show_station_list_from_msg(msg, text)
+            return
+
+        if state.get("awaiting") == "report_city_input":
+            _user_state.pop(uid, None)
+            stations = await find_stations_by_city(city=text, has_stock=None, limit=5)
+            if not stations:
+                await _send(msg, f"😔 В <b>{text}</b> АЗС не найдены.", vk_main_menu())
+                return
+            await _send(msg, f"⛽ <b>Выбери АЗС в {text}:</b>", vk_report_station_keyboard(stations))
+            return
+
+        if uid in _owner_waiting_search:
+            await _owner_search_handler(msg, text)
+            return
+
+        if uid in _owner_waiting_inn:
+            inn = text.strip()
+            if inn and not inn.isdigit():
+                await _send(msg, "ИНН — только цифры. Попробуй ещё раз.")
+                return
+            _owner_waiting_inn.discard(uid)
+            state = _owner_state_data.pop(uid, {})
+            await _owner_finish_text(msg, state.get("station_id", 0), state.get("role", "owner"), inn=inn or None)
+            return
+
+        await _do_text_search(msg, text)
 
     logger.info("VK-бот запущен, начинаем polling...")
     try:

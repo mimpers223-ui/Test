@@ -55,3 +55,6 @@ tg_session*
 tmp/
 temp/
 *.tmp
+
+скриншоты vk/
+bot/.vkbottle/
