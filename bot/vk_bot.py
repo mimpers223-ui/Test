@@ -1049,42 +1049,52 @@ async def run_vk_bot():
                 pass
 
     # Callback events (inline buttons)
+    cb_handlers = {
+        "home": handle_home,
+        "filters": lambda e: _show_filters(e, _parse_payload(e).get("city", "")),
+        "fuel": handle_fuel_filter,
+        "emergency": handle_emergency,
+        "st": handle_station_detail,
+        "back_to_list": handle_station_list_back,
+        "report_start": handle_report_start,
+        "report_fuel": handle_report_fuel,
+        "report_submit": handle_report_submit,
+        "report_city_menu": handle_report_city_menu,
+        "report_city": handle_report_city,
+        "report_pick": handle_report_pick,
+        "sub_radius": handle_subscribe_radius,
+        "sub_station": handle_sub_station,
+        "owner_pick": handle_owner_pick,
+        "owner_role": handle_owner_role,
+        "owner_inn_skip": handle_owner_inn_skip,
+        "mystation": handle_my_station,
+        "oset": handle_owner_quick_set,
+    }
+
     @bot.on.raw_event(MessageEvent)
     async def on_message_event(event: MessageEvent):
+        # CRITICAL: acknowledge callback within 5 seconds to stop VK loading spinner
+        try:
+            await event.show_snackbar("ok")
+        except Exception as e:
+            logger.warning("show_snackbar failed: %s", e)
+
         payload = _parse_payload(event)
         cmd = payload.get("cmd", "")
+        logger.info("VK callback: cmd=%s peer=%s", cmd, _uid_from_event(event))
 
-        handlers = {
-            "home": handle_home,
-            "filters": lambda e: _show_filters(e, payload.get("city", "")),
-            "fuel": handle_fuel_filter,
-            "emergency": handle_emergency,
-            "st": handle_station_detail,
-            "back_to_list": handle_station_list_back,
-            "report_start": handle_report_start,
-            "report_fuel": handle_report_fuel,
-            "report_submit": handle_report_submit,
-            "report_city_menu": handle_report_city_menu,
-            "report_city": handle_report_city,
-            "report_pick": handle_report_pick,
-            "sub_radius": handle_subscribe_radius,
-            "sub_station": handle_sub_station,
-            "owner_pick": handle_owner_pick,
-            "owner_role": handle_owner_role,
-            "owner_inn_skip": handle_owner_inn_skip,
-            "mystation": handle_my_station,
-            "oset": handle_owner_quick_set,
-        }
-
-        handler = handlers.get(cmd)
+        handler = cb_handlers.get(cmd)
         if handler:
             try:
                 await handler(event)
             except Exception as e:
                 logger.exception("VK callback error: cmd=%s error=%s", cmd, e)
-                await _snackbar(event, "⚠️ Ошибка")
+                try:
+                    await _edit(event, "⚠️ Ошибка", vk_main_menu())
+                except Exception:
+                    pass
         else:
-            await _snackbar(event, f"❓ {cmd}")
+            logger.warning("VK unknown callback: cmd=%s", cmd)
 
     logger.info("VK-бот запущен, начинаем polling...")
     try:
