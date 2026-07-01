@@ -433,10 +433,23 @@ async def _show_station_list(event_or_msg, city: str, fuel=None, network=None, m
         promoted_ids = set(await get_promoted_station_ids(city) or [])
 
         def _sort_key(s):
+            statuses = s.get("statuses") or []
+            non_all = [st for st in statuses if st.get("fuel_type") != "all"]
+            has_available = any(st.get("available") is True for st in non_all)
+            has_low = any(st.get("available") is None for st in non_all)
+            has_unavailable = any(st.get("available") is False for st in non_all)
+            if has_available:
+                avail_rank = 0
+            elif has_low:
+                avail_rank = 1
+            elif has_unavailable:
+                avail_rank = 2
+            else:
+                avail_rank = 3
             return (
                 0 if s["id"] in promoted_ids else 1,
+                avail_rank,
                 0 if s.get("is_verified") else 1,
-                0 if s.get("has_data") else 1,
                 (s.get("name") or "").lower(),
             )
         stations_with_status.sort(key=_sort_key)
@@ -859,10 +872,23 @@ async def _show_station_list_from_msg(msg: Message, city: str, fuel=None):
         promoted_ids = set(await get_promoted_station_ids(city) or [])
 
         def _sort_key(s):
+            statuses = s.get("statuses") or []
+            non_all = [st for st in statuses if st.get("fuel_type") != "all"]
+            has_available = any(st.get("available") is True for st in non_all)
+            has_low = any(st.get("available") is None for st in non_all)
+            has_unavailable = any(st.get("available") is False for st in non_all)
+            if has_available:
+                avail_rank = 0
+            elif has_low:
+                avail_rank = 1
+            elif has_unavailable:
+                avail_rank = 2
+            else:
+                avail_rank = 3
             return (
                 0 if s["id"] in promoted_ids else 1,
+                avail_rank,
                 0 if s.get("is_verified") else 1,
-                0 if s.get("has_data") else 1,
                 (s.get("name") or "").lower(),
             )
         stations_with_status.sort(key=_sort_key)
@@ -1035,10 +1061,23 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None,
         promoted_ids = set(await get_promoted_station_ids(city) or [])
 
         def _sort_key(s):
+            statuses = s.get("statuses") or []
+            non_all = [st for st in statuses if st.get("fuel_type") != "all"]
+            has_available = any(st.get("available") is True for st in non_all)
+            has_low = any(st.get("available") is None for st in non_all)
+            has_unavailable = any(st.get("available") is False for st in non_all)
+            if has_available:
+                avail_rank = 0
+            elif has_low:
+                avail_rank = 1
+            elif has_unavailable:
+                avail_rank = 2
+            else:
+                avail_rank = 3
             return (
                 0 if s["id"] in promoted_ids else 1,
+                avail_rank,
                 0 if s.get("is_verified") else 1,
-                0 if s.get("has_data") else 1,
                 (s.get("name") or "").lower(),
             )
         stations_with_status.sort(key=_sort_key)
