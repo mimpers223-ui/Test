@@ -6,6 +6,7 @@ import json
 import logging
 import time
 
+import re
 from vkbottle import Bot
 from vkbottle.bot import Message
 from vkbottle_types.events.bot_events import MessageEvent
@@ -113,6 +114,11 @@ def _truncate(text: str, limit: int = 4090) -> str:
     return text[:limit] + "\n\n... (обрезано)"
 
 
+def _vk_text(text: str) -> str:
+    """Strip HTML tags — VK doesn't render them."""
+    return re.sub(r"<[^>]+>", "", text)
+
+
 # === Helpers ===
 async def _ensure_user(msg: Message) -> int | None:
     uid = _uid(msg)
@@ -124,19 +130,20 @@ async def _ensure_user(msg: Message) -> int | None:
 
 
 async def _send(msg: Message, text: str, keyboard: str | None = None):
-    kwargs = {"message": _truncate(text)}
+    kwargs = {"message": _truncate(_vk_text(text))}
     if keyboard:
         kwargs["keyboard"] = keyboard
     await msg.answer(**kwargs)
 
 
 async def _edit(event: MessageEvent, text: str, keyboard: str | None = None):
+    clean = _truncate(_vk_text(text))
     try:
-        await event.edit_message(message=_truncate(text), keyboard=keyboard)
+        await event.edit_message(message=clean, keyboard=keyboard)
     except Exception as e:
         logger.debug(f"edit_message failed: {e}, sending new")
         try:
-            await event.send_message(message=_truncate(text), keyboard=keyboard)
+            await event.send_message(message=clean, keyboard=keyboard)
         except Exception as e2:
             logger.warning(f"send_message also failed: {e2}")
 
@@ -1077,14 +1084,18 @@ async def run_vk_bot():
     async def on_message_event(event: MessageEvent):
         print(f"[VK-CB] RAW EVENT RECEIVED event_id={event.event_id} peer={event.peer_id}", flush=True)
 
-        # Acknowledge callback immediately
+        # Acknowledge callback immediately via direct HTTP (vkbottle show_snackbar is unreliable)
         try:
-            from vkbottle.tools.mini_types.bot.message_event import ShowSnackbarEvent
-            await event.send_message_event_answer(ShowSnackbarEvent(text="ok"))
-            print(f"[VK-CB] ACK sent event_id={event.event_id}", flush=True)
+            await bot.api.messages.send_message_event_answer(
+                event_id=str(event.event_id),
+                user_id=event.user_id,
+                peer_id=event.peer_id,
+                event_data=json.dumps({"type": "show_snackbar", "text": "ok"}),
+            )
+            print(f"[VK-CB] ACK OK event_id={event.event_id}", flush=True)
         except Exception as e:
             print(f"[VK-CB] ACK FAILED: {e}", flush=True)
-            logger.warning("send_message_event_answer failed: %s", e)
+            logger.warning("VK callback ack failed: %s", e)
 
         payload = _parse_payload(event)
         cmd = payload.get("cmd", "")
