@@ -178,11 +178,26 @@ def vk_subscribe_radius_keyboard() -> str:
     ])
 
 
+VK_GROUP_ID = 239975253
+VK_DONATE_URL = f"https://vk.com/donate?community_id={VK_GROUP_ID}"
+
+
 def vk_premium_keyboard() -> str:
-    """Кнопки Premium."""
+    """Кнопки Premium — ссылка на VK Донат."""
     return vk_keyboard([
-        [_button("🎁 Пробный период", "positive")],
-        [_button("💎 Купить Premium", "primary")],
+        [_link_button("💎 Поддержать 99₽", VK_DONATE_URL)],
+        [_button(VK_BTN_HOME)],
+    ])
+
+
+def vk_donate_keyboard() -> str:
+    """Кнопки доната — ссылка на VK Донат."""
+    return vk_keyboard([
+        [_link_button("☕ 50₽", VK_DONATE_URL)],
+        [_link_button("⛽ 100₽", VK_DONATE_URL)],
+        [_link_button("🔧 250₽", VK_DONATE_URL)],
+        [_link_button("💎 500₽", VK_DONATE_URL)],
+        [_link_button("👑 Шейх 10 000₽", VK_DONATE_URL)],
         [_button(VK_BTN_HOME)],
     ])
 

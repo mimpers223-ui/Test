@@ -192,6 +192,9 @@ async def cmd_start(msg: Message):
         "👋 Привет! Я — Бензин рядом.\n\n"
         "Помогу найти бензин за 5 секунд. 26 000+ АЗС в России.\n\n"
         "🟢 live · цены · очереди · push о завозе\n\n"
+        "❤️ Если бот помог — поддержи проект:\n"
+        "☕ 50₽ · ⛽ 100₽ · 🔧 250₽ · 💎 500₽ · 👑 Шейх 10 000₽\n"
+        "👉 vk.com/donate?community_id=239975253\n\n"
         "👇 <b>Главное меню:</b>"
     )
     await _send(msg, text, vk_main_menu())
@@ -322,20 +325,21 @@ async def cmd_premium(msg: Message):
     text = (
         f"💎 Бензин рядом · Premium\n\n"
         f"🔔 Push о завозе — каждый час\n"
-        f"💎 Premium-бейдж\n\n"
-        f"Скоро появится оплата через VK Pay!\n"
-        f"Следи за обновлениями."
+        f"💎 Premium-бейдж\n"
+        f"📊 Расширенная аналитика\n\n"
+        f"💰 Цена: 99₽\n\n"
+        f"👇 Нажми кнопку ниже для поддержки:"
     )
-    await _send(msg, text, vk_main_menu())
+    await _send(msg, text, vk_premium_keyboard())
 
 
 async def cmd_donate(msg: Message):
     text = (
         "❤️ <b>Поддержать «Бензин рядом»</b>\n\n"
         "Проект бесплатный и работает на энтузиазме.\n\n"
-        "VK Pay пока не подключен. Следи за обновлениями!"
+        "💰 Нажми кнопку below:"
     )
-    await _send(msg, text, vk_main_menu())
+    await _send(msg, text, vk_donate_keyboard())
 
 
 async def cmd_stats(msg: Message):
