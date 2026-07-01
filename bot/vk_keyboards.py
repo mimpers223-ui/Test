@@ -120,14 +120,17 @@ def vk_station_list_keyboard(stations: list[dict], city: str) -> str:
     return vk_keyboard(rows)
 
 
-def vk_station_actions(station_id: int) -> str:
+def vk_station_actions(station_id: int, lat: float | None = None, lon: float | None = None) -> str:
     """Действия с АЗС."""
-    return vk_keyboard([
-        [_button(f"📝 Отчёт #{station_id}", "positive")],
-        [_button(f"🔔 Подписка #{station_id}", "primary")],
-        [_button("◀️ Назад к списку", "secondary")],
-        [_button(VK_BTN_HOME)],
-    ])
+    rows = []
+    if lat and lon:
+        yandex_url = f"https://yandex.ru/maps/?rtext={lat},{lon}&rtt=auto"
+        rows.append([_link_button("🗺 Маршрут", yandex_url)])
+    rows.append([_button(f"📝 Отчёт #{station_id}", "positive")])
+    rows.append([_button(f"🔔 Подписка #{station_id}", "primary")])
+    rows.append([_button("◀️ Назад к списку", "secondary")])
+    rows.append([_button(VK_BTN_HOME)])
+    return vk_keyboard(rows)
 
 
 def vk_fuel_type_keyboard(station_id: int) -> str:

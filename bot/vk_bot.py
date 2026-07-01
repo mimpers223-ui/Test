@@ -484,7 +484,7 @@ async def handle_station_detail(event: MessageEvent):
 
     statuses = await get_station_current_status(station_id)
     text = format_station_card(station, statuses)
-    kb = vk_station_actions(station_id)
+    kb = vk_station_actions(station_id, lat=station.get("lat"), lon=station.get("lon"))
 
     if uid and await is_owner_of_station(uid, station_id):
         from db import is_station_promoted, get_owner_station_by_user_and_station, PROMO_PRICE_STARS
@@ -1085,7 +1085,7 @@ async def handle_station_detail_text(msg: Message, station_id: int):
 
     statuses = await get_station_current_status(station_id)
     text = format_station_card(station, statuses)
-    kb = vk_station_actions(station_id)
+    kb = vk_station_actions(station_id, lat=station.get("lat"), lon=station.get("lon"))
     await _send(msg, text, kb)
 
 
@@ -1432,7 +1432,8 @@ async def run_vk_bot():
                     state = _user_state.get(msg.peer_id, {})
                     city = state.get("city", "")
                     if city:
-                        await cmd_find_stations(msg, city)
+                        await cmd_find_stations(msg, city, fuel=state.get("fuel"),
+                                                network=state.get("network"), page=state.get("page", 0))
                     else:
                         await cmd_start(msg)
                     return
