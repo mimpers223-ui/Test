@@ -62,6 +62,41 @@ _owner_waiting_role: dict[int, int] = {}
 _owner_waiting_inn: set[int] = set()
 _owner_state_data: dict[int, dict] = {}
 
+# Кеш проверки подписки VK
+_vk_subscribe_cache: dict[int, tuple[bool, float]] = {}
+_VK_SUBSCRIBE_TTL = 300  # 5 минут
+
+
+async def _check_vk_subscription(user_id: int, api) -> bool:
+    """Проверяет, подписан ли пользователь на сообщество VK."""
+    import time
+    now = time.time()
+    cached = _vk_subscribe_cache.get(user_id)
+    if cached and now - cached[1] < _VK_SUBSCRIBE_TTL:
+        return cached[0]
+
+    group_id = settings.SUBSCRIBE_COMMUNITY_VK
+    if not group_id:
+        return True
+
+    try:
+        resp = await api.groups.isMember(group_id=group_id, user_id=user_id)
+        is_sub = bool(resp)
+    except Exception:
+        is_sub = True
+
+    _vk_subscribe_cache[user_id] = (is_sub, now)
+    return is_sub
+
+
+def _vk_subscribe_keyboard() -> str:
+    """Клавиатура «Подпишись чтобы продолжить» для VK."""
+    group_id = settings.SUBSCRIBE_COMMUNITY_VK
+    return vk_keyboard([
+        [_link_button("📢 Подписаться", f"https://vk.com/public{group_id}")],
+        [_button("✅ Я подписался", "positive")],
+    ])
+
 
 def _uid(msg: Message) -> int:
     return msg.peer_id
@@ -730,6 +765,19 @@ async def run_vk_bot():
                 uid = _uid(msg)
                 logger.info("VK text: %r", text)
 
+                # --- Проверка подписки на сообщество ---
+                # /start и "В начало" — пропускаем проверку
+                if text not in ("/start", "start", "В начало"):
+                    is_sub = await _check_vk_subscription(uid, bot.api)
+                    if not is_sub:
+                        await _send(
+                            msg,
+                            "📢 <b>Подпишись на сообщество, чтобы пользоваться ботом!</b>\n\n"
+                            "Бот бесплатный. Взамен — подпишись на наше сообщество с новостями о топливе.",
+                            _vk_subscribe_keyboard(),
+                        )
+                        return
+
                 # --- Main menu buttons ---
                 if "Найти АЗС" in text:
                     await cmd_find(msg)
@@ -767,6 +815,14 @@ async def run_vk_bot():
                     _owner_state_data.pop(uid, None)
                     _user_state.pop(uid, None)
                     await cmd_start(msg)
+                    return
+                if "Я подписался" in text:
+                    _vk_subscribe_cache.pop(uid, None)
+                    is_sub = await _check_vk_subscription(uid, bot.api)
+                    if is_sub:
+                        await _send(msg, "✅ Подписка подтверждена! Пользуйся ботом бесплатно.", vk_main_menu())
+                    else:
+                        await _send(msg, "❌ Ты ещё не подписан. Подпишись и нажми снова.", _vk_subscribe_keyboard())
                     return
 
                 # --- Owner role selection ---

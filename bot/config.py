@@ -37,6 +37,9 @@ class Settings:
     # Рекламный баннер (показывается в главном меню)
     AD_BANNER_TEXT: str = os.getenv("AD_BANNER_TEXT", "")
     AD_BANNER_URL: str = os.getenv("AD_BANNER_URL", "")
+    # Канал/сообщество для обязательной подписки
+    SUBSCRIBE_CHANNEL_TG: str = os.getenv("SUBSCRIBE_CHANNEL_TG", "")  # @channel_username или chat_id
+    SUBSCRIBE_COMMUNITY_VK: int = int(os.getenv("SUBSCRIBE_COMMUNITY_VK", "0"))  # ID сообщества VK
 
     def __post_init__(self):
         if self.ADMIN_IDS is None:

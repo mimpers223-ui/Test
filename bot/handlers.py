@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from aiogram import Dispatcher, F
+from aiogram import Dispatcher, F, Bot
 from aiogram.filters import BaseFilter, Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -26,6 +26,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     WebAppData,
 )
+from aiogram.types import ChatMemberUpdated
 
 from db import (
     _execute,
@@ -160,6 +161,57 @@ class BugReportStates(StatesGroup):
 # === FSM: предложение ===
 class IdeaStates(StatesGroup):
     waiting_idea = State()
+
+
+# === Проверка подписки на канал ===
+_SUBSCRIBE_CACHE: dict[int, bool] = {}
+_SUBSCRIBE_CACHE_TTL = 300  # 5 минут
+
+async def _check_subscription(bot: Bot, user_id: int) -> bool:
+    """Проверяет, подписан ли пользователь на канал. Кеширует результат 5 мин."""
+    import time
+    now = time.time()
+    cached = _SUBSCRIBE_CACHE.get(user_id)
+    if cached is not None and now - cached[1] < _SUBSCRIBE_CACHE_TTL:
+        return cached[0]
+
+    channel = settings.SUBSCRIBE_CHANNEL_TG
+    if not channel:
+        return True  # если канал не задан — пропускаем проверку
+
+    try:
+        member = await bot.get_chat_member(chat_id=f"@{channel}" if not channel.startswith("-") else int(channel), user_id=user_id)
+        is_sub = member.status in ("member", "administrator", "creator")
+    except Exception:
+        is_sub = True  # при ошибке — пропускаем (не блокируем)
+
+    _SUBSCRIBE_CACHE[user_id] = (is_sub, now)
+    return is_sub
+
+
+def _subscribe_keyboard_tg() -> InlineKeyboardMarkup:
+    """Клавиатура «Подпишись чтобы продолжить»."""
+    channel = settings.SUBSCRIBE_CHANNEL_TG
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Подписаться", url=f"https://t.me/{channel}")],
+        [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_subscribe")],
+    ])
+
+
+async def _on_check_subscribe(callback: CallbackQuery):
+    """Обработка нажатия «Я подписался»."""
+    bot = callback.bot
+    user_id = callback.from_user.id
+    # Сбрасываем кеш
+    _SUBSCRIBE_CACHE.pop(user_id, None)
+    is_sub = await _check_subscription(bot, user_id)
+    if is_sub:
+        await callback.message.edit_text(
+            "✅ <b>Подписка подтверждена!</b>\n\nПользуйся ботом бесплатно.",
+            reply_markup=None,
+        )
+    else:
+        await callback.answer("❌ Ты ещё не подписан. Подпишись и нажми снова.", show_alert=True)
 
 
 # Простое in-memory состояние для owner-режима (non-FSM)
@@ -2190,6 +2242,41 @@ async def cmd_idea(message: Message, state: FSMContext | None = None):
 
 # === Регистрация ===
 def register_all_handlers(dp: Dispatcher):
+    # Callback «Я подписался» — ДО проверки подписки
+    dp.callback_query.register(_on_check_subscribe, F.data == "check_subscribe")
+
+    # Middleware для проверки подписки — блокирует всё кроме /start и подписки
+    from aiogram import BaseMiddleware
+
+    class SubscriptionMiddleware(BaseMiddleware):
+        async def __call__(self, handler, event, data):
+            # Пропускаем /start и check_subscribe
+            if isinstance(event, Message):
+                text = event.text or ""
+                if text.startswith("/start") or text == "/help":
+                    return await handler(event, data)
+            if isinstance(event, CallbackQuery):
+                if event.data == "check_subscribe":
+                    return await handler(event, data)
+
+            bot = data.get("bot") or event.bot
+            user_id = event.from_user.id
+            is_sub = await _check_subscription(bot, user_id)
+            if not is_sub:
+                if isinstance(event, Message):
+                    await event.answer(
+                        "📢 <b>Подпишись на канал, чтобы пользоваться ботом!</b>\n\n"
+                        "Бот бесплатный. Взамен — подпишись на наш канал с новостями о топливе.",
+                        reply_markup=_subscribe_keyboard_tg(),
+                    )
+                elif isinstance(event, CallbackQuery):
+                    await event.answer("❌ Подпишись на канал, чтобы пользоваться ботом.", show_alert=True)
+                return  # блокируем выполнение
+            return await handler(event, data)
+
+    dp.message.middleware(SubscriptionMiddleware())
+    dp.callback_query.middleware(SubscriptionMiddleware())
+
     # Команды (как fallback)
     dp.message.register(cmd_start, CommandStart())
     dp.message.register(cmd_help, Command("help"))
