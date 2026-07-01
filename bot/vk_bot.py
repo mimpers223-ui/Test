@@ -981,12 +981,15 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None, em
             await _send(msg, "\n".join(lines), vk_main_menu())
             return
 
+        logger.info("[cmd_find_stations] city=%s fuel=%s peer=%s", city, fuel, msg.peer_id)
         stations = await find_stations_by_city(city=city, fuel_type=fuel, has_stock=None, limit=20)
+        logger.info("[cmd_find_stations] found %d stations", len(stations))
         if not stations:
             await _send(msg, f"🔍 В {city} ничего не найдено.", vk_main_menu())
             return
 
         stations_with_status = await get_stations_with_statuses(stations)
+        logger.info("[cmd_find_stations] got statuses for %d", len(stations_with_status))
         promoted_ids = set(await get_promoted_station_ids(city) or [])
 
         def _sort_key(s):
@@ -1001,21 +1004,24 @@ async def cmd_find_stations(msg: Message, city: str, fuel: str | None = None, em
         fuel_label = f" (АИ-{fuel})" if fuel else ""
         title = f"⛽ {city}{fuel_label} — {len(stations_with_status)} АЗС\n"
         rows = []
-        for s in stations_with_status[:5]:
+        for s in stations_with_status[:3]:
             statuses = s.get("statuses", [])
             name = (s.get("name") or "АЗС")[:22]
             has_available = any(st.get("available") is True and st.get("fuel_type") != "all" for st in statuses)
             has_unavailable = any(st.get("available") is False and st.get("fuel_type") != "all" for st in statuses)
             icon = "✅" if has_available else ("❌" if has_unavailable else ("⚠️" if s.get("has_data") else "❓"))
-            rows.append([_button(f"{icon} {name}"[:30], "primary")])
+            label = f"{icon} #{s['id']} {name}"[:30]
+            rows.append([_button(label, "primary")])
 
         rows.append([_button("🚨 Экстренный", "negative")])
         rows.append([_button("🔄 Фильтры", "secondary")])
         rows.append([_button(VK_BTN_HOME)])
         kb = vk_keyboard(rows)
+        logger.info("[cmd_find_stations] sending %d rows, title=%d chars", len(rows), len(title))
         await _send(msg, title, kb)
+        logger.info("[cmd_find_stations] sent OK")
     except Exception as e:
-        logger.exception("cmd_find_stations: %s", e)
+        logger.exception("[cmd_find_stations] FAILED: %s", e)
         await _send(msg, "⚠️ Ошибка при загрузке", vk_main_menu())
 
 
