@@ -1145,7 +1145,7 @@ async def show_city_results(msg, city: str, fuel: str = None, max_price: float =
 
         # Определяем продвинутые АЗС
         from db import get_promoted_station_ids
-        promoted_ids = set(await get_promoted_station_ids(city))
+        promoted_ids = set(await get_promoted_station_ids(city) or [])
 
         def _sort_key(s):
             return (

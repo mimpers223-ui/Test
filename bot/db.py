@@ -229,6 +229,13 @@ async def _create_schema_pg(pool):
         except Exception as e:
             logger.warning(f"PG migration next_delivery_at: {e}")
 
+        # owner_stations: платное размещение
+        try:
+            await conn.execute("ALTER TABLE owner_stations ADD COLUMN IF NOT EXISTS is_promoted BOOLEAN DEFAULT FALSE")
+            await conn.execute("ALTER TABLE owner_stations ADD COLUMN IF NOT EXISTS promoted_until TIMESTAMPTZ")
+        except Exception as e:
+            logger.warning(f"PG migration owner_stations promoted: {e}")
+
         # user_badges
         await conn.execute(
             """CREATE TABLE IF NOT EXISTS user_badges (
@@ -288,6 +295,21 @@ async def _fetch(sql: str, *args, one: bool = False):
                 row = await cur.fetchone()
                 return dict(row) if row else None
             rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+    else:
+        # PostgreSQL — asyncpg
+        async with _db.acquire() as conn:
+            # Конвертируем ? обратно в $1, $2, ...
+            import re
+            pg_sql = sql
+            idx = 1
+            while "?" in pg_sql:
+                pg_sql = pg_sql.replace("?", f"${idx}", 1)
+                idx += 1
+            if one:
+                row = await conn.fetchrow(pg_sql, *args)
+                return dict(row) if row else None
+            rows = await conn.fetch(pg_sql, *args)
         return [dict(r) for r in rows]
 
 
