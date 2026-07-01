@@ -1,0 +1,14 @@
+[Unit]
+Description=Бензин рядом — Парсеры топлива
+After=network.target
+
+[Service]
+Type=oneshot
+User=benzin
+Group=benzin
+WorkingDirectory=/opt/benzin-ryadom
+ExecStart=/opt/benzin-ryadom/.venv/bin/python scripts/orchestrator.py
+StandardOutput=journal
+StandardError=journal
+EnvironmentFile=/opt/benzin-ryadom/bot/.env
+TimeoutStartSec=3600

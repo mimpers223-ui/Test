@@ -1,0 +1,25 @@
+[Unit]
+Description=Бензин рядом — Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=benzin
+Group=benzin
+WorkingDirectory=/opt/benzin-ryadom
+ExecStart=/opt/benzin-ryadom/.venv/bin/python bot/main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Безопасность
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/benzin-ryadom
+
+# Окружение
+EnvironmentFile=/opt/benzin-ryadom/bot/.env
+
+[Install]
+WantedBy=multi-user.target

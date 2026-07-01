@@ -1,0 +1,10 @@
+[Unit]
+Description=Бензин рядом — Timer для парсеров (каждые 4 часа)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=4h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

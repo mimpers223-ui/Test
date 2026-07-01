@@ -56,6 +56,7 @@ parse_2gis = _safe_import("parse_2gis")
 parse_osm = _safe_import("parse_osm")
 parse_max = _safe_import("parse_max")
 parse_yandex_maps = _safe_import("parse_yandex_maps_playwright")
+parse_ishubenzin = _safe_import("parse_ishubenzin")
 enrich_addresses = _safe_import("enrich_addresses")
 
 
@@ -232,6 +233,22 @@ async def enrich_runner():
     return {}
 
 
+async def parse_ishubenzin_runner():
+    """Запускает ishubenzin.ru парсер (народная карта топлива, без ключа)."""
+    if not parse_ishubenzin:
+        print("  ⏭ parse_ishubenzin не импортирован")
+        return {}
+    print(f"\n[ishubenzin.ru] Crowd-sourced fuel map (no API key)")
+    try:
+        sys.argv = ["parse_ishubenzin.py"]
+        await parse_ishubenzin.main()
+    except SystemExit:
+        pass
+    except Exception as e:
+        print(f"  ⚠ ishubenzin.ru: {e}")
+    return {}
+
+
 SOURCES = {
     "fuelprice": {
         "name": "fuelprice.ru (60+ городов, координаты + цены)",
@@ -273,6 +290,12 @@ SOURCES = {
         "name": "Обогащение адресов (Photon)",
         "function": enrich_runner,
         "interval_hours": 6,
+        "enabled": True,
+    },
+    "ishubenzin": {
+        "name": "ishubenzin.ru (народная карта, без ключа)",
+        "function": parse_ishubenzin_runner,
+        "interval_hours": 4,
         "enabled": True,
     },
 }
