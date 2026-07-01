@@ -233,6 +233,8 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
         by_fuel: dict[str, list] = defaultdict(list)
         for s in statuses:
             ft = s.get("fuel_type", "unknown")
+            if ft == "all":
+                continue  # skip "all" - it's not a real fuel type
             by_fuel[ft].append(s)
 
         # Сводка по наличию (лучший статус по каждому топливу)

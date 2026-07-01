@@ -992,22 +992,31 @@ async def find_stations_by_city(
 
         # === Подзапрос: есть отчёт с наличием за последние 4 часа ===
         if has_stock:
-            join = """
-                JOIN (
-                    SELECT station_id,
-                           MAX(CASE WHEN available = 1 THEN 1 ELSE 0 END) as has_stock,
-                           MAX(price) FILTER (WHERE fuel_type = ?) as max_price_recent,
-                           MIN(price) FILTER (WHERE fuel_type = ? AND price IS NOT NULL) as min_price_recent
-                    FROM reports
-                    WHERE created_at > datetime('now', '-4 hours')
-                    GROUP BY station_id
-                ) r ON r.station_id = s.id
-            """
-            # fuel_type повторяется 2 раза: в max_price_recent и в min_price_recent
             if fuel_type:
+                join = """
+                    JOIN (
+                        SELECT station_id,
+                               MAX(CASE WHEN available = 1 THEN 1 ELSE 0 END) as has_stock,
+                               MIN(price) FILTER (WHERE fuel_type = ? AND price IS NOT NULL) as min_price_recent
+                        FROM reports
+                        WHERE created_at > datetime('now', '-4 hours')
+                          AND fuel_type != 'all'
+                          AND fuel_type = ?
+                        GROUP BY station_id
+                    ) r ON r.station_id = s.id
+                """
                 join_params.extend([fuel_type, fuel_type])
             else:
-                join_params.extend([None, None])
+                join = """
+                    JOIN (
+                        SELECT station_id,
+                               MAX(CASE WHEN available = 1 THEN 1 ELSE 0 END) as has_stock
+                        FROM reports
+                        WHERE created_at > datetime('now', '-4 hours')
+                          AND fuel_type != 'all'
+                        GROUP BY station_id
+                    ) r ON r.station_id = s.id
+                """
             where.append("r.has_stock = 1")
 
         # === Фильтр по цене (свежие отчёты за 7 дней) ===
@@ -1093,15 +1102,30 @@ async def find_stations_by_city(
         params.append(fuel_type)
 
     if has_stock:
-        join = """
-            JOIN (
-                SELECT station_id,
-                       BOOL_OR(available = TRUE) as has_stock
-                FROM reports
-                WHERE created_at > NOW() - INTERVAL '4 hours'
-                GROUP BY station_id
-            ) r ON r.station_id = s.id
-        """
+        if fuel_type:
+            join = f"""
+                JOIN (
+                    SELECT station_id,
+                           BOOL_OR(available = TRUE) as has_stock
+                    FROM reports
+                    WHERE created_at > NOW() - INTERVAL '4 hours'
+                      AND fuel_type != 'all'
+                      AND fuel_type = ${len(params) + 1}
+                    GROUP BY station_id
+                ) r ON r.station_id = s.id
+                """
+            params.append(fuel_type)
+        else:
+            join = """
+                JOIN (
+                    SELECT station_id,
+                           BOOL_OR(available = TRUE) as has_stock
+                    FROM reports
+                    WHERE created_at > NOW() - INTERVAL '4 hours'
+                      AND fuel_type != 'all'
+                    GROUP BY station_id
+                ) r ON r.station_id = s.id
+                """
         where.append("r.has_stock = TRUE")
 
     if max_price is not None and fuel_type:

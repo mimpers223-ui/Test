@@ -174,7 +174,7 @@ async def save_reports(stations_data: list, area_name: str):
                     fuel_types.append(ft)
 
         if not fuel_types:
-            fuel_types = ["all"]
+            continue  # skip - "all" fuel_type is not meaningful for availability
 
         for fuel_type in fuel_types:
             # Нормализуем тип топлива
