@@ -245,6 +245,89 @@ async def _create_schema_pg(pool):
         except Exception as e:
             logger.warning(f"PG migration owner_stations promoted: {e}")
 
+        # 3. Автоимпорт из SQLite если PG пуста
+        try:
+            cnt = await conn.fetchval("SELECT COUNT(*) FROM stations")
+            if cnt == 0 and DB_PATH.exists():
+                await _import_from_sqlite_pg(conn)
+        except Exception as e:
+            logger.warning(f"PG auto-import: {e}")
+
+
+async def _import_from_sqlite_pg(conn):
+    """Импорт данных из локальной SQLite в PostgreSQL (одноразово)."""
+    import sqlite3 as _sq3
+    logger.info(f"Importing from SQLite: {DB_PATH}")
+    sq = _sq3.connect(str(DB_PATH))
+    sq.row_factory = _sq3.Row
+
+    # Stations
+    rows = sq.execute("SELECT * FROM stations").fetchall()
+    if rows:
+        data = []
+        for r in rows:
+            ft = r["fuel_types"]
+            if isinstance(ft, str):
+                try: ft = json.loads(ft)
+                except: ft = []
+            data.append((r["id"],r["osm_id"],r["name"],r["operator"],r["brand"],r["network"],
+                r["country"],r["region"],r["city"],r["address"],r["lat"],r["lon"],ft,
+                r["has_24_7"],r["phone"],r["website"],r["is_verified"],r["is_active"],
+                str(r["created_at"]),str(r["updated_at"])))
+        await conn.executemany('''INSERT INTO stations
+            (id,osm_id,name,operator,brand,network,country,region,city,address,lat,lon,fuel_types,
+             has_24_7,phone,website,is_verified,is_active,created_at,updated_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18,$19::timestamptz,$20::timestamptz)
+            ON CONFLICT (id) DO NOTHING''', data)
+        logger.info(f"  stations: {len(data)}")
+
+    # Users
+    rows = sq.execute("SELECT * FROM users").fetchall()
+    if rows:
+        data = [(r["id"],r["telegram_id"],r["username"],r["first_name"],r["last_name"],
+            r["language_code"],r["reputation"],r["total_reports"],r["confirmed_reports"],
+            r["badge"],r["region"],r["city"],r["is_owner"],r["is_blocked"],
+            str(r["created_at"]),str(r["last_active_at"])) for r in rows]
+        await conn.executemany('''INSERT INTO users
+            (id,telegram_id,username,first_name,last_name,language_code,reputation,
+             total_reports,confirmed_reports,badge,region,city,is_owner,is_blocked,
+             created_at,last_active_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::timestamptz,$16::timestamptz)
+            ON CONFLICT (id) DO NOTHING''', data)
+        logger.info(f"  users: {len(data)}")
+
+    # Reports (батчами)
+    rows = sq.execute("SELECT * FROM reports").fetchall()
+    total = 0
+    for i in range(0, len(rows), 3000):
+        chunk = rows[i:i+3000]
+        data = []
+        for r in chunk:
+            nd = r["next_delivery_at"]
+            data.append((r["id"],r["station_id"],r["user_id"],r["fuel_type"],
+                bool(r["available"]),r["price"],r["queue_size"],r["has_limit"],
+                r["limit_liters"],r["comment"],r["confidence"],r["confirmations"],
+                r["disputes"],r["source"],str(r["expires_at"]) if r["expires_at"] else None,
+                str(nd) if nd else None, str(r["created_at"])))
+        await conn.executemany('''INSERT INTO reports
+            (id,station_id,user_id,fuel_type,available,price,queue_size,has_limit,
+             limit_liters,comment,confidence,confirmations,disputes,source,expires_at,
+             next_delivery_at,created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+                    $15::timestamptz,$16::timestamptz,$17::timestamptz)
+            ON CONFLICT (id) DO NOTHING''', data)
+        total += len(data)
+    logger.info(f"  reports: {total}")
+
+    # Reset sequences
+    for t in ["stations","users","reports"]:
+        try:
+            await conn.execute(f"SELECT setval(pg_get_serial_sequence('{t}','id'), COALESCE((SELECT MAX(id) FROM {t}),1))")
+        except: pass
+
+    sq.close()
+    logger.info("SQLite → PG import done")
+
 
 from contextlib import asynccontextmanager
 
