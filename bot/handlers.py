@@ -177,14 +177,16 @@ async def _check_subscription(bot: Bot, user_id: int) -> bool:
 
     channel = settings.SUBSCRIBE_CHANNEL_TG
     if not channel:
+        logger.warning("_check_subscription: SUBSCRIBE_CHANNEL_TG is empty! Skipping check.")
         return True  # если канал не задан — пропускаем проверку
 
     try:
         chat_id = f"@{channel}" if not channel.startswith("-") else int(channel)
         member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
         is_sub = member.status in ("member", "administrator", "creator")
+        logger.info("_check_subscription: user=%d channel=%s status=%s is_sub=%s", user_id, chat_id, member.status, is_sub)
     except Exception as e:
-        logger.warning("_check_subscription failed (bot must be channel admin): %s", e)
+        logger.warning("_check_subscription FAILED: user=%d channel=%s error=%s", user_id, channel, e)
         is_sub = False  # блокируем пока бот не станет админом канала
 
     _SUBSCRIBE_CACHE[user_id] = (is_sub, now)

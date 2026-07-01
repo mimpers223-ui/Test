@@ -33,6 +33,10 @@ services:
         value: 8080
       - key: USE_SQLITE
         value: "false"
+      - key: SUBSCRIBE_CHANNEL_TG
+        value: "benzyn_ryadom"
+      - key: SUBSCRIBE_COMMUNITY_VK
+        value: "239975253"
       # === Секреты задаются вручную в Render Dashboard ===
       # DATABASE_URL - из Supabase Settings → Database → Connection string
       # BOT_TOKEN - от @BotFather

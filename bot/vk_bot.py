@@ -77,13 +77,16 @@ async def _check_vk_subscription(user_id: int, api) -> bool:
 
     group_id = settings.SUBSCRIBE_COMMUNITY_VK
     if not group_id:
+        logger.warning("_check_vk_subscription: SUBSCRIBE_COMMUNITY_VK is 0! Skipping check.")
         return True
 
     try:
         resp = await api.groups.isMember(group_id=group_id, user_id=user_id)
         is_sub = bool(resp)
-    except Exception:
-        is_sub = True
+        logger.info("_check_vk_subscription: user=%d group=%s is_sub=%s", user_id, group_id, is_sub)
+    except Exception as e:
+        logger.warning("_check_vk_subscription FAILED: user=%d group=%s error=%s", user_id, group_id, e)
+        is_sub = False
 
     _vk_subscribe_cache[user_id] = (is_sub, now)
     return is_sub
