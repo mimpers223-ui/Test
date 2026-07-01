@@ -2,6 +2,7 @@
 Пул соединений с БД + хелперы.
 Поддержка SQLite (локальная разработка) и PostgreSQL (production).
 """
+import asyncio
 import json
 import logging
 import math
@@ -228,7 +229,6 @@ async def _create_schema_pg(pool):
         if schema_path.exists():
             sql = schema_path.read_text(encoding="utf-8")
             # Разбиваем на statements, но не ломаем $$..$$ блоки (PL/pgSQL)
-            # Заменяем ; внутри $$ на плейсхолдер, потом обратно
             import re as _re
             protected = []
             def _protect(m):
@@ -242,8 +242,14 @@ async def _create_schema_pg(pool):
                 # Восстанавливаем $$ блоки
                 for i, p in enumerate(protected):
                     stmt = stmt.replace(f"__PROTECTED_{i}__", p)
+                # Пропускаем VIEW и COMMENT — не критичны для бота, могут зависать
+                upper = stmt.upper().strip()
+                if upper.startswith("CREATE OR REPLACE VIEW") or upper.startswith("COMMENT ON"):
+                    continue
                 try:
-                    await conn.execute(stmt)
+                    await asyncio.wait_for(conn.execute(stmt), timeout=15)
+                except asyncio.TimeoutError:
+                    logger.warning(f"PG schema stmt timed out (15s): {stmt[:80]}...")
                 except Exception as e:
                     logger.warning(f"PG schema stmt: {e} | {stmt[:80]}...")
             logger.info("PG schema.sql applied")
