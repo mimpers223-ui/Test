@@ -39,6 +39,7 @@ import db  # noqa: E402
 
 TG_API_ID = os.getenv("TG_API_ID", "")
 TG_API_HASH = os.getenv("TG_API_HASH", "")
+TG_SESSION_STRING = os.getenv("TG_SESSION_STRING", "")
 SESSION_PATH = Path(__file__).parent / "session"
 
 # Каналы для мониторинга. Можно переопределить через TG_CHANNELS в env (через запятую)
@@ -699,8 +700,12 @@ async def run_once(upload_url: str = None, api_key: str = ""):
         logger.error("TG_API_ID / TG_API_HASH не заданы. См. инструкции в начале файла.")
         sys.exit(1)
     from telethon import TelegramClient
+    from telethon.sessions import StringSession
 
-    client = TelegramClient(str(SESSION_PATH), int(TG_API_ID), TG_API_HASH)
+    if TG_SESSION_STRING:
+        client = TelegramClient(StringSession(TG_SESSION_STRING), int(TG_API_ID), TG_API_HASH)
+    else:
+        client = TelegramClient(str(SESSION_PATH), int(TG_API_ID), TG_API_HASH)
     await client.start()
     logger.info("Authorized as %s", (await client.get_me()).username)
     await db.init_db()
@@ -732,8 +737,12 @@ async def run_watch(upload_url: str = None, api_key: str = ""):
         logger.error("TG_API_ID / TG_API_HASH не заданы.")
         sys.exit(1)
     from telethon import TelegramClient, events
+    from telethon.sessions import StringSession
 
-    client = TelegramClient(str(SESSION_PATH), int(TG_API_ID), TG_API_HASH)
+    if TG_SESSION_STRING:
+        client = TelegramClient(StringSession(TG_SESSION_STRING), int(TG_API_ID), TG_API_HASH)
+    else:
+        client = TelegramClient(str(SESSION_PATH), int(TG_API_ID), TG_API_HASH)
     await client.start()
     logger.info("Authorized as %s", (await client.get_me()).username)
     logger.info("Watching for new messages in: %s", CHANNELS)

@@ -119,6 +119,7 @@ async def save_price(station_name: str, fuel: str, price: float,
 async def main():
     api_id = os.environ.get("TG_API_ID")
     api_hash = os.environ.get("TG_API_HASH")
+    tg_session_string = os.environ.get("TG_SESSION_STRING", "")
     if not api_id or not api_hash:
         print("❌ TG_API_ID и TG_API_HASH не заданы")
         print("Получить: https://my.telegram.org/apps")
@@ -149,6 +150,7 @@ async def main():
     # Импорт Telethon (требует pip install telethon)
     try:
         from telethon import TelegramClient
+        from telethon.sessions import StringSession
     except ImportError:
         print("❌ pip install telethon")
         return 1
@@ -157,7 +159,12 @@ async def main():
     total_prices = 0
     total_msgs = 0
 
-    async with TelegramClient("tg_session", int(api_id), api_hash) as client:
+    if tg_session_string:
+        client_ctx = TelegramClient(StringSession(tg_session_string), int(api_id), api_hash)
+    else:
+        client_ctx = TelegramClient("tg_session", int(api_id), api_hash)
+
+    async with client_ctx as client:
         for channel in channels:
             print(f"[{channel}]")
             messages = await fetch_channel_messages(client, channel, args.limit)
