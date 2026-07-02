@@ -1173,6 +1173,72 @@ async def handle_import_prices(request):
     })
 
 
+async def handle_parse(request):
+    """POST /api/parse — запуск всех парсеров (вызывается внешним cron).
+    
+    Авторизация: header X-Parse-Key: <PARSE_API_KEY>
+    Не блокирует основной процесс — запускает парсеры в фоне.
+    """
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    
+    import asyncio
+    import sys
+    
+    async def _run_parsers():
+        """Запуск парсеров в фоне (без re-init DB — API уже подключён)."""
+        scripts_dir = str(Path(__file__).parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        
+        results = {}
+        # fuelprice
+        try:
+            import parse_fuelprice
+            sys.argv = ["parse_fuelprice.py", "--create-new"]
+            await parse_fuelprice.main()
+            results["fuelprice"] = "ok"
+        except Exception as e:
+            results["fuelprice"] = str(e)
+        
+        # gdebenz
+        try:
+            import parse_gdebenz
+            await parse_gdebenz.main()
+            results["gdebenz"] = "ok"
+        except Exception as e:
+            results["gdebenz"] = str(e)
+        
+        # ishubenzin
+        try:
+            import parse_ishubenzin
+            await parse_ishubenzin.main()
+            results["ishubenzin"] = "ok"
+        except Exception as e:
+            results["ishubenzin"] = str(e)
+        
+        # tg channels
+        tg_api_id = os.getenv("TG_API_ID", "")
+        tg_api_hash = os.getenv("TG_API_HASH", "")
+        if tg_api_id and tg_api_hash:
+            try:
+                import parse_tg_channels
+                sys.argv = ["parse_tg_channels.py"]
+                await parse_tg_channels.main()
+                results["tg_channels"] = "ok"
+            except Exception as e:
+                results["tg_channels"] = str(e)
+        else:
+            results["tg_channels"] = "skipped (no API keys)"
+        
+        logger.info("Background parsers finished: %s", results)
+    
+    asyncio.create_task(_run_parsers())
+    return web.json_response({"ok": True, "message": "parsers started in background"})
+
+
 # === CORS ===
 # ВНИМАНИЕ: в проде ограничить через ALLOWED_ORIGINS env var.
 ALLOWED_ORIGINS = "*"  # default для dev; в проде задать через env
@@ -1225,6 +1291,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/reports", handle_create_report)
     app.router.add_post("/api/price-update", handle_price_update)
     app.router.add_post("/api/import_prices", handle_import_prices)
+    app.router.add_post("/api/parse", handle_parse)
     # Mini App static files
     miniapp_dir = Path(__file__).parent.parent / "miniapp"
     if miniapp_dir.exists():
