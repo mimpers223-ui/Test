@@ -65,6 +65,7 @@ services:
       # === Секреты наследуются от web service автоматически ===
       # DATABASE_URL, BOT_TOKEN, CHANNEL_CHAT_ID
       # TG_API_ID, TG_API_HASH — задать вручную в Render Dashboard (секреты)
+      # TG_SESSION_STRING — задать вручную в Render Dashboard (секрет)
 
   # === Cron Job: мониторинг свежести данных каждые 2 часа ===
   - type: cron
