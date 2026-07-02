@@ -741,7 +741,9 @@ async def run_once(upload_url: str = None, api_key: str = ""):
         client = TelegramClient(str(SESSION_PATH), int(TG_API_ID), TG_API_HASH)
     await client.start()
     logger.info("Authorized as %s", (await client.get_me()).username)
-    await db.init_db()
+    import os
+    if not os.getenv("_API_MODE"):
+        await db.init_db()
     await db.stale_old_reports("tg")
 
     total_saved = 0
@@ -760,7 +762,9 @@ async def run_once(upload_url: str = None, api_key: str = ""):
         logger.info("  Scanned %d messages in %s", count, channel)
 
     await client.disconnect()
-    await db.close_db()
+    import os
+    if not os.getenv("_API_MODE"):
+        await db.close_db()
     logger.info("=== Total TG reports saved: %d ===", total_saved)
     return total_saved
 

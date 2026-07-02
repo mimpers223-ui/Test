@@ -225,7 +225,9 @@ async def save_reports(stations_data: list, area_name: str):
 
 
 async def main():
-    await db.init_db()
+    import os
+    if not os.getenv("_API_MODE"):
+        await db.init_db()
     await db.stale_old_reports("gdebenz")
 
     total_saved = 0
@@ -240,7 +242,9 @@ async def main():
             logger.warning(f"  {area['name']}: no data")
 
     logger.info(f"\n=== Total gdebenz reports saved: {total_saved} ===")
-    await db.close_db()
+    import os
+    if not os.getenv("_API_MODE"):
+        await db.close_db()
 
 
 if __name__ == "__main__":

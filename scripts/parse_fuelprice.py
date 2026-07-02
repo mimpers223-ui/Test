@@ -13,6 +13,7 @@
   prices_html: "Аи-92: <strong>74.9</strong> руб. (2026-06-26)<br>Аи-95: <strong>81.9</strong> руб. (2026-06-26)<br>"
 """
 import argparse
+import os
 import asyncio
 import os
 import re
@@ -215,7 +216,8 @@ async def main():
 
     print(f"=== Парсер fuelprice.ru ===")
     if not args.dry_run:
-        await db.init_db()
+        if not os.getenv("_API_MODE"):
+            await db.init_db()
         await db.stale_old_reports(SOURCE_NAME)
 
     async with aiohttp.ClientSession() as session:
@@ -311,7 +313,8 @@ async def main():
         print(f"  Матчей в БД: {total_matched}")
         print(f"  Новых АЗС создано: {total_created}")
         print(f"  Цен сохранено: {total_saved}")
-        await db.close_db()
+        if not os.getenv("_API_MODE"):
+            await db.close_db()
     return 0
 
 

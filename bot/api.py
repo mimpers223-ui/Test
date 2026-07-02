@@ -1192,9 +1192,11 @@ async def handle_parse(request):
         scripts_dir = str(Path(__file__).parent.parent / "scripts")
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
+
+        # Флаг для парсеров: НЕ вызывать close_db() (API уже держит пул)
+        os.environ["_API_MODE"] = "1"
         
         results = {}
-        # fuelprice
         try:
             import parse_fuelprice
             sys.argv = ["parse_fuelprice.py", "--create-new"]
@@ -1203,7 +1205,6 @@ async def handle_parse(request):
         except Exception as e:
             results["fuelprice"] = str(e)
         
-        # gdebenz
         try:
             import parse_gdebenz
             await parse_gdebenz.main()
@@ -1211,7 +1212,6 @@ async def handle_parse(request):
         except Exception as e:
             results["gdebenz"] = str(e)
         
-        # ishubenzin
         try:
             import parse_ishubenzin
             await parse_ishubenzin.main()
@@ -1219,13 +1219,11 @@ async def handle_parse(request):
         except Exception as e:
             results["ishubenzin"] = str(e)
         
-        # tg channels
         tg_api_id = os.getenv("TG_API_ID", "")
         tg_api_hash = os.getenv("TG_API_HASH", "")
         if tg_api_id and tg_api_hash:
             try:
                 import parse_tg_channels
-                # run_once() напрямую — main() вызывает asyncio.run() что нельзя из event loop
                 await parse_tg_channels.run_once()
                 results["tg_channels"] = "ok"
             except Exception as e:
@@ -1233,6 +1231,7 @@ async def handle_parse(request):
         else:
             results["tg_channels"] = "skipped (no API keys)"
         
+        os.environ.pop("_API_MODE", None)
         logger.info("Background parsers finished: %s", results)
     
     asyncio.create_task(_run_parsers())
