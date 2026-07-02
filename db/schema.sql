@@ -235,6 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_premium_user ON premium_subscriptions (user_id) W
 -- =====================================================
 -- View: текущий статус АЗС (последний отчёт по каждому типу топлива)
 -- =====================================================
+DROP VIEW IF EXISTS station_current_status;
 CREATE OR REPLACE VIEW station_current_status AS
 SELECT DISTINCT ON (s.id, r.fuel_type)
     s.id AS station_id,
