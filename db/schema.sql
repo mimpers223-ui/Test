@@ -251,6 +251,7 @@ SELECT DISTINCT ON (s.id, r.fuel_type)
     r.has_limit,
     r.limit_liters,
     r.confidence,
+    r.source,
     r.created_at AS last_report_at,
     EXTRACT(EPOCH FROM (NOW() - r.created_at)) AS seconds_since_report,
     CASE
@@ -264,8 +265,17 @@ LEFT JOIN LATERAL (
     SELECT *
     FROM reports
     WHERE station_id = s.id
-    AND created_at > NOW() - INTERVAL '24 hours'
-    ORDER BY confidence DESC, created_at DESC
+    AND (
+        -- Парсерские отчёты: только за 2 часа (старые удаляются парсерами)
+        (source != 'user' AND created_at > NOW() - INTERVAL '2 hours')
+        OR
+        -- Пользовательские отчёты: живут 7 дней или пока не противоречит парсер
+        (source = 'user' AND created_at > NOW() - INTERVAL '7 days')
+    )
+    ORDER BY 
+        CASE WHEN source = 'user' THEN 0 ELSE 1 END,  -- пользовательские приоритетнее
+        confidence DESC, 
+        created_at DESC
     LIMIT 1
 ) r ON true
 WHERE s.is_active = TRUE;

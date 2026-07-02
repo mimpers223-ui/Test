@@ -1439,9 +1439,13 @@ async def stale_old_reports(source: str, older_than_hours: int = 2) -> int:
     
     Вызывается перед началом нового цикла парсинга, чтобы станции,
     которые НЕ появились в новых данных, не оставались 'available' 
-    со старыми отчётами.
+    со старыми отчётоми.
+    Пользовательские отчёты (source='user') НЕ удаляются — они живут
+    пока не появится противоречащие данные.
     Возвращает количество удалённых записей.
     """
+    if source == "user":
+        return 0  # never delete user reports
     if USE_SQLITE:
         cursor = await _db.execute(
             """DELETE FROM reports 
@@ -1546,8 +1550,15 @@ async def get_station_current_status(station_id: int) -> list:
         async with _db.execute(
             """SELECT fuel_type, available, price, queue_size, has_limit, limit_liters, confidence, created_at, next_delivery_at, source
                FROM reports
-               WHERE station_id = ? AND fuel_type != 'all' AND created_at > datetime('now', '-1 day')
-               ORDER BY fuel_type, confidence DESC, created_at DESC""",
+               WHERE station_id = ? AND fuel_type != 'all'
+                 AND (
+                   (source != 'user' AND created_at > datetime('now', '-2 hours'))
+                   OR
+                   (source = 'user' AND created_at > datetime('now', '-7 days'))
+                 )
+               ORDER BY fuel_type, 
+                 CASE WHEN source = 'user' THEN 0 ELSE 1 END,
+                 confidence DESC, created_at DESC""",
             (station_id,)
         ) as cur:
             rows = await cur.fetchall()
@@ -1580,8 +1591,14 @@ async def get_station_current_status(station_id: int) -> list:
                 FROM reports
                 WHERE station_id = $1
                   AND fuel_type != 'all'
-                  AND created_at > NOW() - INTERVAL '24 hours'
-                ORDER BY fuel_type, confidence DESC, created_at DESC
+                  AND (
+                    (source != 'user' AND created_at > NOW() - INTERVAL '2 hours')
+                    OR
+                    (source = 'user' AND created_at > NOW() - INTERVAL '7 days')
+                  )
+                ORDER BY fuel_type, 
+                  CASE WHEN source = 'user' THEN 0 ELSE 1 END,
+                  confidence DESC, created_at DESC
                 """,
                 station_id,
             )
@@ -1608,8 +1625,14 @@ async def get_stations_with_statuses(stations: list) -> list:
                 FROM reports
                 WHERE station_id IN ({placeholders})
                   AND fuel_type != 'all'
-                  AND created_at > datetime('now', '-1 day')
-                ORDER BY station_id, fuel_type, confidence DESC, created_at DESC""",
+                  AND (
+                    (source != 'user' AND created_at > datetime('now', '-2 hours'))
+                    OR
+                    (source = 'user' AND created_at > datetime('now', '-7 days'))
+                  )
+                ORDER BY station_id, fuel_type, 
+                  CASE WHEN source = 'user' THEN 0 ELSE 1 END,
+                  confidence DESC, created_at DESC""",
             station_ids,
         ) as cur:
             rows = await cur.fetchall()
@@ -1622,8 +1645,14 @@ async def get_stations_with_statuses(stations: list) -> list:
                     FROM reports
                     WHERE station_id = ANY($1)
                       AND fuel_type != 'all'
-                      AND created_at > NOW() - INTERVAL '24 hours'
-                    ORDER BY station_id, fuel_type, confidence DESC, created_at DESC""",
+                      AND (
+                        (source != 'user' AND created_at > NOW() - INTERVAL '2 hours')
+                        OR
+                        (source = 'user' AND created_at > NOW() - INTERVAL '7 days')
+                      )
+                    ORDER BY station_id, fuel_type, 
+                      CASE WHEN source = 'user' THEN 0 ELSE 1 END,
+                      confidence DESC, created_at DESC""",
                 station_ids,
             )
 
