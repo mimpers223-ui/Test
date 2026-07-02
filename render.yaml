@@ -61,9 +61,10 @@ services:
       - key: USE_SQLITE
         value: "false"
       - key: SKIP_TG
-        value: "true"
+        value: "false"
       # === Секреты наследуются от web service автоматически ===
       # DATABASE_URL, BOT_TOKEN, CHANNEL_CHAT_ID
+      # TG_API_ID, TG_API_HASH — задать вручную в Render Dashboard (секреты)
 
   # === Cron Job: мониторинг свежести данных каждые 2 часа ===
   - type: cron
