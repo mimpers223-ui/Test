@@ -210,7 +210,7 @@ async def save_reports(stations_data: list, area_name: str):
                 message += f" | конфликт данных"
 
             await db._execute(
-                """INSERT INTO reports (station_id, fuel_type, available, source, created_at, message_text)
+                """INSERT INTO reports (station_id, fuel_type, available, source, created_at, comment)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 station_id,
                 normalized_fuel,
