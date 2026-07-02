@@ -224,7 +224,7 @@ async def cmd_start(msg: Message):
         "🟢 live · цены · очереди · push о завозе\n\n"
         "❤️ Если бот помог — поддержи проект:\n"
         "☕ 50₽ · ⛽ 100₽ · 🔧 250₽ · 💎 500₽ · 👑 Шейх 10 000₽\n"
-        "👉 vk.com/donate?community_id=239975253\n\n"
+        "👉 vk.com/benzyn_ryadom?w=donut\n\n"
         "👇 <b>Главное меню:</b>"
     )
     await _send(msg, text, vk_main_menu())

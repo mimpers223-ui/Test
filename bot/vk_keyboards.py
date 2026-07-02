@@ -179,7 +179,7 @@ def vk_subscribe_radius_keyboard() -> str:
 
 
 VK_GROUP_ID = 239975253
-VK_DONATE_URL = f"https://vk.com/donate?community_id={VK_GROUP_ID}"
+VK_DONATE_URL = "https://vk.com/benzyn_ryadom?w=donut"
 
 
 def vk_premium_keyboard() -> str:
