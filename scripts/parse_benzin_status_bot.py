@@ -215,13 +215,13 @@ async def query_city(client, bot_entity, city: str) -> int:
     try:
         # Отправляем название города
         await client.send_message(bot_entity, city)
-        # Ждём 5 секунд, чтобы бот ответил
-        await asyncio.sleep(5)
+        # Ждём 7 секунд, чтобы бот ответил
+        await asyncio.sleep(7)
     except Exception as e:
         logger.warning("Ошибка отправки в бот: %s", e)
         return 0
 
-    # Читаем последние ответы бота (5 сообщений)
+    # Читаем последние ответы бота
     from telethon import functions
     try:
         result = await client(functions.messages.GetHistoryRequest(
@@ -239,27 +239,36 @@ async def query_city(client, bot_entity, city: str) -> int:
         logger.warning("Не удалось прочитать историю: %s", e)
         return 0
 
+    # DEBUG: показываем все сообщения с обеих сторон
+    for m in messages:
+        direction = "→" if m.outgoing else "←"
+        text_preview = (m.message or "")[:200].replace("\n", " | ")
+        logger.info("  %s %s: %s", direction, "me" if m.outgoing else "bot", text_preview)
+
     for msg in messages:
         if not msg.message or len(msg.message) < 5:
             continue
-        if not msg.outgoing:  # только входящие (от бота)
-            # Парсим каждую строку сообщения (бот часто шлёт много строк)
-            for line in msg.message.split("\n"):
-                if len(line.strip()) < 5:
+        if msg.outgoing:  # пропускаем свои сообщения
+            continue
+        # Парсим каждую строку сообщения
+        for line in msg.message.split("\n"):
+            if len(line.strip()) < 5:
+                continue
+            parsed = parse_station_line(line)
+            for p in parsed:
+                station_id = await find_station(p.get("network"), p.get("address"), city)
+                if not station_id:
+                    logger.debug("Skip: net=%s addr=%s city=%s (station not found)", p.get("network"), p.get("address"), city)
                     continue
-                parsed = parse_station_line(line)
-                for p in parsed:
-                    station_id = await find_station(p.get("network"), p.get("address"), city)
-                    if not station_id:
-                        continue
-                    await db.add_report(
-                        station_id=station_id,
-                        fuel_type=p["fuel_type"],
-                        available=p["available"],
-                        source="benzin_status_bot",
-                        comment=f"bot: {line.strip()[:200]}",
-                    )
-                    saved += 1
+                await db.add_report(
+                    station_id=station_id,
+                    fuel_type=p["fuel_type"],
+                    available=p["available"],
+                    source="benzin_status_bot",
+                    comment=f"bot: {line.strip()[:200]}",
+                )
+                saved += 1
+                logger.info("  ✅ station=%d fuel=%s avail=%s", station_id, p["fuel_type"], p["available"])
     return saved
 
 
