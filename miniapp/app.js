@@ -1220,6 +1220,25 @@
   }
 
   // Boot
+  // Version check — force reload if old version is cached
+  const APP_VERSION = '8';
+  try {
+    const stored = localStorage.getItem('benzin_app_version');
+    if (stored && stored !== APP_VERSION) {
+      console.log('App version changed, reloading...');
+      localStorage.setItem('benzin_app_version', APP_VERSION);
+      // Clear caches and force reload
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      }
+      window.location.reload(true);
+    } else {
+      localStorage.setItem('benzin_app_version', APP_VERSION);
+    }
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+
   window.addEventListener('error', (e) => {
     console.error('App error:', e.error);
     if (e.error && dom && dom.toast) {

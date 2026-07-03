@@ -102,7 +102,7 @@ async def run_bot():
         logger.warning("delete_webhook failed (continuing): %s", e)
 
     # === Menu button для Mini App ===
-    web_app_url = settings.WEB_APP_URL or "https://benzin-ryadom.onrender.com/m"
+    web_app_url = settings.WEB_APP_URL or "https://benzin-ryadom.onrender.com/v2"
     try:
         from aiogram.types import MenuButtonWebApp
         await bot.set_chat_menu_button(
