@@ -8,11 +8,14 @@ Overpass API: https://overpass-api.de/api/interpreter
 """
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 import urllib.request
 import urllib.parse
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bot"))
@@ -159,23 +162,24 @@ async def import_to_db(stations: list) -> tuple[int, int, int]:
     return len(stations), added, updated
 
 
-async def main():
-    print(f"=== Импорт АЗС {REGION_NAME} из OpenStreetMap ===\n")
-    print(f"BBox: {BBOX}")
-    print(f"Overpass URL: {OVERPASS_URL}\n")
+async def main() -> dict:
+    logger.info(f"=== Импорт АЗС {REGION_NAME} из OpenStreetMap ===")
+    logger.info(f"BBox: {BBOX}")
 
     if not os.getenv("_API_MODE"):
         await db.init_db()
 
-    print("Запрашиваю Overpass API...")
+    logger.info("Запрашиваю Overpass API...")
     try:
         data = fetch_overpass()
     except Exception as e:
-        print(f"❌ Ошибка Overpass: {e}")
-        return
+        logger.error(f"❌ Ошибка Overpass: {e}")
+        if not os.getenv("_API_MODE"):
+            await db.close_db()
+        return {"ok": False, "error": str(e), "added": 0, "updated": 0}
 
     elements = data.get("elements", [])
-    print(f"Получено элементов: {len(elements)}")
+    logger.info(f"Получено элементов: {len(elements)}")
 
     stations = []
     for e in elements:
@@ -183,27 +187,21 @@ async def main():
         if s:
             stations.append(s)
 
-    print(f"Валидных станций: {len(stations)}\n")
+    logger.info(f"Валидных станций: {len(stations)}")
 
     if not stations:
-        print("Нет станций для импорта")
-        return
-
-    # Показываем примеры
-    print("Примеры:")
-    for s in stations[:5]:
-        op = s.get("operator") or s["name"]
-        print(f"  ⛽ {op} | {s.get('city','')} | {s.get('address','')} | ({s['lat']:.5f}, {s['lon']:.5f})")
-    print()
+        logger.info("Нет станций для импорта")
+        if not os.getenv("_API_MODE"):
+            await db.close_db()
+        return {"ok": True, "added": 0, "updated": 0, "total": 0}
 
     total, added, updated = await import_to_db(stations)
-    print(f"=== Результат ===")
-    print(f"Всего: {total}")
-    print(f"Добавлено: {added}")
-    print(f"Обновлено: {updated}")
+    logger.info(f"=== OSM result: total={total}, added={added}, updated={updated} ===")
 
     if not os.getenv("_API_MODE"):
         await db.close_db()
+
+    return {"ok": True, "total": total, "added": added, "updated": updated}
 
 
 if __name__ == "__main__":
