@@ -1550,48 +1550,74 @@ async def find_stations_by_name(query: str, limit: int = 5) -> list:
 async def find_stations_by_address(query: str, limit: int = 10) -> list:
     """Ищет АЗС по адресу (название + улица).
 
-    Примеры запросов:
-      - «Лукойл Мира»
-      - «Газпром Ленина 42»
-      - «Роснефть Советская»
+    Разбивает запрос на слова и ищет каждое слово отдельно:
+      - «Газпром Минская» → operator/name содержит "Газпром" И address/city содержит "Минская"
+      - «Лукойл Мира 42» → operator/name содержит "Лукойл" И address содержит "Мира 42"
     """
+    words = [w.strip() for w in query.split() if w.strip()]
+    if not words:
+        return []
+
     if USE_SQLITE:
-        sql = """
+        # Каждое слово должно совпасть хотя бы с одним полем
+        word_conditions = []
+        params = []
+        for w in words:
+            like = f"%{w.lower()}%"
+            word_conditions.append(
+                "(py_lower(name) LIKE ? OR py_lower(operator) LIKE ?"
+                " OR py_lower(address) LIKE ? OR py_lower(city) LIKE ?)"
+            )
+            params.extend([like, like, like, like])
+
+        where = " AND ".join(word_conditions)
+        sql = f"""
             SELECT id, name, operator, city, address, lat, lon, is_verified
             FROM stations
-            WHERE is_active = 1
-              AND (py_lower(name) LIKE ? OR py_lower(operator) LIKE ?
-                   OR py_lower(address) LIKE ? OR py_lower(city) LIKE ?
-                   OR (py_lower(name) || ' ' || py_lower(address)) LIKE ?)
+            WHERE is_active = 1 AND {where}
             ORDER BY
                 CASE WHEN py_lower(name) LIKE ? THEN 0 ELSE 1 END,
                 CASE WHEN py_lower(address) LIKE ? THEN 0 ELSE 1 END,
                 operator, name
             LIMIT ?
         """
-        like = f"%{query.lower()}%"
-        combined = f"%{query.lower()}%"
-        async with _db.execute(sql, (like, like, like, like, combined, like, like, limit)) as cur:
+        # Для сортировки — ищем совпадение по первому слову
+        first_like = f"%{words[0].lower()}%"
+        params.extend([first_like, first_like, limit])
+        async with _db.execute(sql, params) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
     else:
-        async with _db.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, name, operator, city, address, lat, lon, is_verified
-                FROM stations
-                WHERE is_active = TRUE
-                  AND (name ILIKE $1 OR operator ILIKE $1
-                       OR address ILIKE $1 OR city ILIKE $1
-                       OR (name || ' ' || address) ILIKE $1)
-                ORDER BY
-                    CASE WHEN name ILIKE $1 THEN 0 ELSE 1 END,
-                    CASE WHEN address ILIKE $1 THEN 0 ELSE 1 END,
-                    operator NULLS LAST, name
-                LIMIT $2
-                """,
-                f"%{query}%", limit,
+        # PostgreSQL: каждое слово в отдельном ILIKE
+        word_clauses = []
+        params = []
+        idx = 1
+        for w in words:
+            word_clauses.append(
+                f"(name ILIKE ${idx} OR operator ILIKE ${idx}"
+                f" OR address ILIKE ${idx} OR city ILIKE ${idx})"
             )
+            params.append(f"%{w}%")
+            idx += 1
+
+        where = " AND ".join(word_clauses)
+        params.append(f"%{words[0]}%")  # for sorting
+        params.append(f"%{words[0]}%")  # for sorting
+        params.append(limit)
+
+        rows = await (await _db.acquire()).fetch(
+            f"""
+            SELECT id, name, operator, city, address, lat, lon, is_verified
+            FROM stations
+            WHERE is_active = TRUE AND {where}
+            ORDER BY
+                CASE WHEN name ILIKE ${idx} THEN 0 ELSE 1 END,
+                CASE WHEN address ILIKE ${idx+1} THEN 0 ELSE 1 END,
+                operator NULLS LAST, name
+            LIMIT ${idx+2}
+            """,
+            *params,
+        )
         return [dict(r) for r in rows]
 
 
