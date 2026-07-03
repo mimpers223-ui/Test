@@ -977,12 +977,16 @@
       dom.stationsList.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">⛽</div>
-          <div class="empty-title">Добро пожаловать!</div>
-          <div class="empty-subtitle">Выбери город чтобы увидеть АЗС</div>
+          <div class="empty-title">Найди ближайшую АЗС</div>
+          <div class="empty-subtitle">Выбери город наверху или нажми кнопку ниже</div>
+          <button class="btn btn-primary" style="margin-top:16px; max-width:200px;" data-action="pick-city">📍 Выбрать город</button>
         </div>
       `;
       dom.emptyState.hidden = true;
       dom.resultsCount.textContent = '0';
+      // Bind the button
+      const btn = dom.stationsList.querySelector('[data-action="pick-city"]');
+      if (btn) btn.addEventListener('click', () => showCityPicker());
     }
   }
 
