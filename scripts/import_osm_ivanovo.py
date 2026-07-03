@@ -185,33 +185,3 @@ async def main() -> dict:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     asyncio.run(main())
-        return {"ok": False, "error": str(e), "added": 0, "updated": 0}
-
-    elements = data.get("elements", [])
-    logger.info(f"Получено элементов: {len(elements)}")
-
-    stations = []
-    for e in elements:
-        s = osm_tags_to_station(e)
-        if s:
-            stations.append(s)
-
-    logger.info(f"Валидных станций: {len(stations)}")
-
-    if not stations:
-        logger.info("Нет станций для импорта")
-        if not os.getenv("_API_MODE"):
-            await db.close_db()
-        return {"ok": True, "added": 0, "updated": 0, "total": 0}
-
-    total, added, updated = await import_to_db(stations)
-    logger.info(f"=== OSM result: total={total}, added={added}, updated={updated} ===")
-
-    if not os.getenv("_API_MODE"):
-        await db.close_db()
-
-    return {"ok": True, "total": total, "added": added, "updated": updated}
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
