@@ -372,14 +372,19 @@ def report_city_keyboard() -> InlineKeyboardMarkup:
 
 
 def report_station_keyboard(stations: list[dict], city: str) -> InlineKeyboardMarkup:
-    """Список АЗС для выбора при отчёте."""
+    """Список АЗС для выбора при отчёте — сеть + адрес."""
     buttons = []
     for s in stations[:15]:
-        name = (s.get("name") or s.get("operator") or "АЗС")[:30]
-        addr = (s.get("address") or "")[:20]
-        label = f"⛽ {name}"
-        if addr:
-            label += f" ({addr})"
+        operator = (s.get("operator") or "")[:15]
+        address = (s.get("address") or "")[:25]
+        if operator and address:
+            label = f"⛽ {operator} — {address}"
+        elif operator:
+            label = f"⛽ {operator}"
+        elif address:
+            label = f"⛽ {address}"
+        else:
+            label = f"⛽ {s.get('name', 'АЗС')}"
         buttons.append([InlineKeyboardButton(
             text=label,
             callback_data=f"report_pick:{s['id']}",
@@ -396,14 +401,19 @@ def report_station_keyboard(stations: list[dict], city: str) -> InlineKeyboardMa
 
 
 def report_address_results_keyboard(stations: list[dict]) -> InlineKeyboardMarkup:
-    """Список АЗС, найденных по адресу, для выбора при отчёте."""
+    """Список АЗС, найденных по адресу — сеть + адрес."""
     buttons = []
     for s in stations[:10]:
-        name = (s.get("name") or s.get("operator") or "АЗС")[:25]
-        addr = (s.get("address") or "")[:20]
-        label = f"⛽ {name}"
-        if addr:
-            label += f" — {addr}"
+        operator = (s.get("operator") or "")[:15]
+        address = (s.get("address") or "")[:25]
+        if operator and address:
+            label = f"⛽ {operator} — {address}"
+        elif operator:
+            label = f"⛽ {operator}"
+        elif address:
+            label = f"⛽ {address}"
+        else:
+            label = f"⛽ {s.get('name', 'АЗС')}"
         buttons.append([InlineKeyboardButton(
             text=label,
             callback_data=f"report_pick:{s['id']}",

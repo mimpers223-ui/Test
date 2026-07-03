@@ -219,11 +219,20 @@ def vk_report_city_keyboard() -> str:
 
 
 def vk_report_station_keyboard(stations: list[dict]) -> str:
-    """Список АЗС для выбора при отчёте."""
+    """Список АЗС для выбора при отчёте — сеть + адрес."""
     rows = []
     for s in stations[:4]:
-        name = (s.get("name") or "АЗС")[:20]
-        rows.append([_button(f"#{s['id']} {name}", "primary")])
+        operator = (s.get("operator") or "")[:12]
+        address = (s.get("address") or "")[:15]
+        if operator and address:
+            label = f"#{s['id']} {operator} {address}"
+        elif operator:
+            label = f"#{s['id']} {operator}"
+        elif address:
+            label = f"#{s['id']} {address}"
+        else:
+            label = f"#{s['id']} {s.get('name', 'АЗС')}"
+        rows.append([_button(label, "primary")])
     rows.append([_button("🔍 Найти по адресу", "positive")])
     rows.append([_button("◀️ Назад", "secondary")])
     rows.append([_button(VK_BTN_HOME)])
@@ -231,14 +240,19 @@ def vk_report_station_keyboard(stations: list[dict]) -> str:
 
 
 def vk_report_address_results_keyboard(stations: list[dict]) -> str:
-    """Список АЗС, найденных по адресу."""
+    """Список АЗС, найденных по адресу — сеть + адрес."""
     rows = []
     for s in stations[:5]:
-        name = (s.get("name") or "АЗС")[:18]
-        addr = (s.get("address") or "")[:15]
-        label = f"#{s['id']} {name}"
-        if addr:
-            label += f" {addr}"
+        operator = (s.get("operator") or "")[:12]
+        address = (s.get("address") or "")[:15]
+        if operator and address:
+            label = f"#{s['id']} {operator} {address}"
+        elif operator:
+            label = f"#{s['id']} {operator}"
+        elif address:
+            label = f"#{s['id']} {address}"
+        else:
+            label = f"#{s['id']} {s.get('name', 'АЗС')}"
         rows.append([_button(label, "primary")])
     rows.append([_button("🔍 Найти другую", "positive")])
     rows.append([_button("◀️ Назад", "secondary")])

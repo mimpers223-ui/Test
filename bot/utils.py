@@ -163,12 +163,10 @@ def format_time_ago(dt) -> str:
 def format_station_card(station: dict, statuses: list | None = None) -> str:
     """Форматирует карточку АЗС.
 
-    Показывает:
-    - Название, оператор, город, адрес
-    - Сводку по наличию (✅ N / ⚠ N / ❌ N)
-    - Ближайший завоз (если есть в отчётах)
-    - Детали по каждому виду топлива
-    - Пометку [ДЕМО] если все данные из seed
+    Порядок:
+    1. Название сети / оператор
+    2. Адрес (улица, город)
+    3. Всё остальное
     """
     if statuses is None:
         statuses = station.get("statuses", [])
@@ -178,7 +176,6 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
     city = station.get("city")
     address = station.get("address")
     fuel_types_raw = station.get("fuel_types") or []
-    # Парсим fuel_types если это JSON-строка
     if isinstance(fuel_types_raw, str):
         try:
             fuel_types = json.loads(fuel_types_raw)
@@ -189,21 +186,25 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
     has_24_7 = station.get("has_24_7")
     is_verified = station.get("is_verified")
 
-    # Определяем, все ли отчёты из seed
     is_demo = False
     if statuses:
         sources = {s.get("source") for s in statuses}
         is_demo = sources == {"seed_demo"} or sources == {"seed"} or sources == {None} or sources == {"seed_demo", "seed"}
 
-    lines = [f"⛽ <b>{name}</b>"]
-    if is_demo:
-        lines[0] += "  <i>(демо-данные)</i>"
+    # 1. Название сети / оператор — первая строка
+    display_name = operator or name
+    first_line = f"⛽ <b>{display_name}</b>"
     if is_verified:
-        lines[0] += "  ✓"
-    if operator:
-        lines.append(f"🏢 {operator}")
+        first_line += "  ✓"
+    if is_demo:
+        first_line += "  <i>(демо)</i>"
+    lines = [first_line]
 
-    # Адрес — крупно и заметно
+    # Если оператор и имя разные — показываем имя мелко
+    if operator and name and name != operator:
+        lines.append(f"📌 {name}")
+
+    # 2. Адрес — вторая строка, крупно
     addr_parts = []
     if city:
         addr_parts.append(city)
@@ -211,8 +212,10 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
         addr_parts.append(address)
     if addr_parts:
         lines.append(f"📍 <b>{', '.join(addr_parts)}</b>")
+    else:
+        lines.append("📍 <i>адрес не указан</i>")
 
-    # Рейтинг качества бензина (если есть)
+    # 3. Рейтинг
     avg_rating = station.get("avg_rating")
     total_reviews = station.get("total_reviews", 0)
     if avg_rating and total_reviews > 0:
@@ -222,12 +225,13 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
         stars = "⭐" * full_stars + ("✨" if half_star else "") + "☆" * empty_stars
         lines.append(f"⭐ {stars} {avg_rating} ({total_reviews} отзывов)")
 
-    # Координаты (мелко, для справки)
+    # Координаты
     lat = station.get("lat")
     lon = station.get("lon")
     if lat and lon and (lat != 0 and lon != 0):
         lines.append(f"🌐 {lat:.5f}, {lon:.5f}")
 
+    # Extras
     extras = []
     if has_24_7:
         extras.append("24/7")
