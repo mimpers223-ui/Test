@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 _rate_limit: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT_PER_MIN = 60  # 60 GET / 30 POST в минуту на IP
 
+# === Parsers lock (чтобы не запускать парсеры параллельно) ===
+_parsers_running: bool = False
+
 
 def _check_rate(ip: str, max_per_min: int) -> bool:
     """Возвращает True если запрос разрешён, False если rate limit превышен."""
@@ -52,6 +55,36 @@ def _check_rate(ip: str, max_per_min: int) -> bool:
         return False
     _rate_limit[ip].append(now)
     return True
+
+
+# === Simple in-memory cache for slow endpoints ===
+# Reduces DB load for frequent queries (by-city, etc.)
+_cache: dict[str, tuple[float, str]] = {}  # key → (expires_at, json_str)
+CACHE_TTL_STATIONS = 60  # 1 min for station lists
+CACHE_TTL_SEARCH = 30    # 30 sec for search
+
+
+def _cache_get(key: str) -> str | None:
+    """Get cached response or None."""
+    if key in _cache:
+        expires_at, data = _cache[key]
+        if time.time() < expires_at:
+            return data
+        else:
+            del _cache[key]
+    return None
+
+
+def _cache_set(key: str, data: str, ttl: int = CACHE_TTL_STATIONS):
+    """Cache a response."""
+    # Limit cache size to prevent memory issues
+    if len(_cache) > 500:
+        # Remove oldest entries
+        now = time.time()
+        expired = [k for k, (e, _) in _cache.items() if e < now]
+        for k in expired:
+            del _cache[k]
+    _cache[key] = (time.time() + ttl, data)
 
 
 def _serialize_station(s: dict) -> dict:
@@ -435,6 +468,17 @@ async def handle_stations_by_city(request):
     if is_premium_user:
         limit = min(limit * 3, 500)
 
+    # === Cache check (skip for premium users to ensure fresh data) ===
+    if not is_premium_user:
+        cache_key = f"bycity:{city}:{region}:{fuel}:{network}:{max_price}:{has_stock}:{include_nearby}:{limit}"
+        cached = _cache_get(cache_key)
+        if cached:
+            return web.Response(
+                text=cached,
+                content_type="application/json",
+                headers={"X-Cache": "HIT"}
+            )
+
     stations = await find_stations_by_city(
         city=city,
         region=region,
@@ -468,7 +512,7 @@ async def handle_stations_by_city(request):
             "has_data": len(statuses) > 0,
         })
 
-    return web.json_response({
+    response_data = {
         "stations": result,
         "count": len(result),
         "city": city,
@@ -481,7 +525,14 @@ async def handle_stations_by_city(request):
             "include_nearby_regions": include_nearby,
         },
         "disclaimer": DISCLAIMER.replace("<b>", "").replace("</b>", ""),
-    })
+    }
+
+    # Cache the response (already serialized)
+    if not is_premium_user:
+        import json as _json
+        _cache_set(cache_key, _json.dumps(response_data, default=str), CACHE_TTL_STATIONS)
+
+    return web.json_response(response_data)
 
 
 async def handle_emergency(request):
@@ -1174,13 +1225,23 @@ async def handle_import_prices(request):
 
 async def handle_parse(request):
     """POST/GET /api/parse — запуск всех парсеров (вызывается внешним cron).
-    
+
     Авторизация: query ?key=<PARSE_API_KEY> или header X-Parse-Key
     Не блокирует основной процесс — запускает парсеры в фоне.
+    Защита от частого вызова: не запустит если уже идёт.
     """
+    global _parsers_running
+    if _parsers_running:
+        return web.json_response({
+            "ok": False,
+            "message": "Parsers already running, skipped"
+        }, status=429)
+    _parsers_running = True
+
     parse_key = os.environ.get("PARSE_API_KEY", "")
     provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
     if not parse_key or not provided_key or provided_key != parse_key:
+        _parsers_running = False
         return web.json_response({"error": "unauthorized"}, status=401)
     
     import asyncio
@@ -1204,13 +1265,14 @@ async def handle_parse(request):
         except Exception as e:
             results["fuelprice"] = str(e)
         
-        try:
-            import parse_gdebenz
-            await parse_gdebenz.main()
-            results["gdebenz"] = "ok"
-        except Exception as e:
-            results["gdebenz"] = str(e)
-        
+        # gdebenz removed — API is unreliable, keeps failing
+        # try:
+        #     import parse_gdebenz
+        #     await parse_gdebenz.main()
+        #     results["gdebenz"] = "ok"
+        # except Exception as e:
+        #     results["gdebenz"] = str(e)
+
         try:
             import parse_ishubenzin
             await parse_ishubenzin.main()
@@ -1232,7 +1294,9 @@ async def handle_parse(request):
         
         os.environ.pop("_API_MODE", None)
         logger.info("Background parsers finished: %s", results)
-    
+        global _parsers_running
+        _parsers_running = False
+
     asyncio.create_task(_run_parsers())
     return web.json_response({"ok": True, "message": "parsers started in background"})
 
