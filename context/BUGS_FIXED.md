@@ -94,3 +94,8 @@
 
 #### 19. api.py CORS wildcard
 `ALLOWED_ORIGINS = "*"` — любые сайты могут делать запросы.
+
+#### 20. PG find_stations_by_name — missing params for relevance/limit — db.py
+**Было:** `*params, limit` передавалось в conn.fetch(), но SQL использовал `${first_idx}` и `${limit_idx}` которые не соответствовали переданным параметрам. Для запроса "Лукойл" — SQL期待 $1 (word), $2 (relevance), $3 (limit), но передавалось только 2 значения.
+**Стало:** `params.append(words[0]); first_idx=len(params); params.append(limit); limit_idx=len(params); conn.fetch(sql, *params)`.
+**Влияние:** Все поисковые запросы через /api/search крашились с 500 Internal Server Error.

@@ -770,86 +770,225 @@
   let _stationPickerSearchTimer = null;
 
   // ============= MAP =============
+  let _leafletMap = null;
+  let _leafletLayer = null;
+  let _userMarker = null;
+  let _userCircle = null;
+  let _mapStations = [];
+  let _mapLoaded = false;
+
+  function _getMapAvailability(s, fuel) {
+    // Возвращает: 'available' | 'partial' | 'unavailable' | 'unknown'
+    const statuses = s.statuses || [];
+    if (!statuses || statuses.length === 0) return 'unknown';
+    // Если указан тип топлива — фильтруем
+    const filtered = fuel ? statuses.filter(st => st.fuel_type === fuel) : statuses;
+    const active = filtered.length > 0 ? filtered : statuses;
+    if (active.length === 0) return 'unknown';
+    const has = active.filter(st => st.available === true);
+    const no = active.filter(st => st.available === false);
+    if (has.length === active.length) return 'available';
+    if (no.length === active.length) return 'unavailable';
+    if (has.length > 0) return 'partial';
+    return 'unknown';
+  }
+
+  function _makeMarkerIcon(status) {
+    const colors = {
+      available: '#22c55e',
+      partial: '#eab308',
+      unavailable: '#ef4444',
+      unknown: '#6b7280',
+    };
+    const color = colors[status] || colors.unknown;
+    return L.divIcon({
+      className: 'custom-marker',
+      html: `<div class="marker-pin" style="background:${color}"><span>⛽</span></div>`,
+      iconSize: [32, 42],
+      iconAnchor: [16, 42],
+      popupAnchor: [0, -38],
+    });
+  }
+
+  function _userLocationIcon() {
+    return L.divIcon({
+      className: 'user-marker',
+      html: '<div class="user-pin"><div class="user-pulse"></div><div class="user-dot"></div></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
+  }
+
+  function _popupHtml(s) {
+    const op = escape(s.operator || s.name || 'АЗС');
+    const addr = escape(s.address || '');
+    const avail = _getMapAvailability(s, state.fuel);
+    const labels = { available: 'Есть топливо', partial: 'Частично', unavailable: 'Нет топлива', unknown: 'Нет данных' };
+    return `
+      <div class="map-popup">
+        <div class="map-popup-name">${op}</div>
+        ${addr ? `<div class="map-popup-addr">${addr}</div>` : ''}
+        <div class="map-popup-status status-${avail}">${labels[avail]}</div>
+        <button class="map-popup-btn" data-station-id="${s.id}">Открыть ›</button>
+      </div>
+    `;
+  }
+
   function loadMap() {
     const container = document.getElementById('map-container');
     const list = document.getElementById('map-stations-list');
+    const locateBtn = document.getElementById('map-locate-btn');
     if (!container || !list) return;
 
     if (!state.city) {
       container.innerHTML = '<div class="map-empty">📍 Выбери город на главной</div>';
       list.innerHTML = '';
+      if (locateBtn) locateBtn.style.display = 'none';
       return;
     }
+    if (locateBtn) locateBtn.style.display = 'flex';
 
-    // Show loading in map
-    container.innerHTML = '<div class="map-empty">⏳ Загрузка карты...</div>';
+    // Init Leaflet map (once)
+    if (!_leafletMap) {
+      _leafletMap = L.map(container, {
+        zoomControl: true,
+        attributionControl: true,
+      }).setView([55.7558, 37.6173], 11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap',
+      }).addTo(_leafletMap);
+      _leafletLayer = L.layerGroup().addTo(_leafletMap);
+      _leafletMap.on('popupopen', (e) => {
+        const btn = e.popup.getElement()?.querySelector('[data-station-id]');
+        if (btn) {
+          btn.addEventListener('click', () => {
+            const id = parseInt(btn.dataset.stationId, 10);
+            const s = _mapStations.find(x => x.id === id);
+            if (s) openStationDetail(s);
+          });
+        }
+      });
+      // Locate button
+      if (locateBtn) {
+        locateBtn.addEventListener('click', () => centerOnUser());
+      }
+    }
+
+    // Invalidate size in case container was hidden
+    setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 50);
 
     // Load stations
     const params = new URLSearchParams();
     params.set('city', state.city);
+    params.set('with_coords', '1');
     if (state.fuel) params.set('fuel', state.fuel);
-    params.set('limit', '50');
-    api('/api/stations/by-city?' + params).then(data => {
-      const stations = (data.stations || []).filter(s => s.lat && s.lon);
-      if (stations.length === 0) {
-        container.innerHTML = '<div class="map-empty">😔 Нет АЗС с координатами в этом городе</div>';
-        list.innerHTML = '';
+    api('/api/stations/by-city?' + params.toString()).then(data => {
+      _mapStations = data.stations || [];
+      if (_mapStations.length === 0) {
+        list.innerHTML = '<div class="map-empty">😔 Нет АЗС с координатами в этом городе</div>';
+        _leafletLayer.clearLayers();
         return;
       }
 
-      // Calculate center
-      const centerLat = stations.reduce((sum, s) => sum + s.lat, 0) / stations.length;
-      const centerLon = stations.reduce((sum, s) => sum + s.lon, 0) / stations.length;
+      // Center map on stations
+      const lats = _mapStations.map(s => s.lat);
+      const lons = _mapStations.map(s => s.lon);
+      const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+      const centerLon = lons.reduce((a, b) => a + b, 0) / lons.length;
+      const bounds = L.latLngBounds(_mapStations.map(s => [s.lat, s.lon]));
+      _leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
 
-      // Use OpenStreetMap embed (no API key needed)
-      const bbox = calculateBbox(stations);
-      const bboxStr = `${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}`;
-      const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bboxStr}&layer=mapnik&marker=${centerLat},${centerLon}`;
-
-      container.innerHTML = `<iframe src="${mapUrl}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
-
-      // Render list below
-      list.innerHTML = '';
-      stations.slice(0, 20).forEach(s => {
-        const op = s.operator || s.name || 'АЗС';
-        const addr = s.address || s.city || '';
-        const item = document.createElement('div');
-        item.className = 'map-station-item';
-        item.innerHTML = `
-          <div class="map-station-icon">⛽</div>
-          <div class="map-station-info">
-            <div class="map-station-name">${escape(op)}</div>
-            <div class="map-station-addr">${escape(addr)}</div>
-          </div>
-          <div class="map-station-arrow">›</div>
-        `;
-        item.addEventListener('click', () => openStationDetail(s));
-        list.appendChild(item);
+      // Add markers
+      _leafletLayer.clearLayers();
+      _mapStations.forEach(s => {
+        const status = _getMapAvailability(s, state.fuel);
+        const m = L.marker([s.lat, s.lon], { icon: _makeMarkerIcon(status) });
+        m.bindPopup(_popupHtml(s), { maxWidth: 240, closeButton: true });
+        m.on('click', () => {
+          haptic('light');
+        });
+        m.addTo(_leafletLayer);
       });
+
+      // Show user location if already known
+      if (state.userLocation) {
+        _updateUserMarker(state.userLocation);
+      }
+
+      // Render list
+      renderMapStationsList(_mapStations);
     }).catch(e => {
-      container.innerHTML = `<div class="map-empty">⚠️ Ошибка: ${escape(e.message)}</div>`;
-      list.innerHTML = '';
+      list.innerHTML = `<div class="map-empty">⚠️ ${escape(e.message)}</div>`;
+      _leafletLayer.clearLayers();
     });
   }
 
-  function calculateBbox(stations) {
-    let minLat = Infinity, maxLat = -Infinity;
-    let minLon = Infinity, maxLon = -Infinity;
+  function renderMapStationsList(stations) {
+    const list = document.getElementById('map-stations-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!stations || stations.length === 0) {
+      list.innerHTML = '<div class="map-empty">Нет АЗС</div>';
+      return;
+    }
     stations.forEach(s => {
-      if (s.lat < minLat) minLat = s.lat;
-      if (s.lat > maxLat) maxLat = s.lat;
-      if (s.lon < minLon) minLon = s.lon;
-      if (s.lon > maxLon) maxLon = s.lon;
+      const op = s.operator || s.name || 'АЗС';
+      const addr = s.address || s.city || '';
+      const status = _getMapAvailability(s, state.fuel);
+      const item = document.createElement('div');
+      item.className = 'map-station-item';
+      item.dataset.stationId = s.id;
+      item.innerHTML = `
+        <div class="map-station-icon status-${status}">⛽</div>
+        <div class="map-station-info">
+          <div class="map-station-name">${escape(op)}</div>
+          <div class="map-station-addr">${escape(addr)}</div>
+          <div class="map-station-status status-${status}">${({available:'В наличии',partial:'Частично',unavailable:'Нет топлива',unknown:'Нет данных'})[status]}</div>
+        </div>
+        <div class="map-station-arrow">›</div>
+      `;
+      item.addEventListener('click', () => {
+        // Center on station in map
+        if (_leafletMap) {
+          _leafletMap.setView([s.lat, s.lon], 16, { animate: true });
+        }
+        openStationDetail(s);
+      });
+      list.appendChild(item);
     });
-    // Add padding
-    const latPad = (maxLat - minLat) * 0.1 || 0.01;
-    const lonPad = (maxLon - minLon) * 0.1 || 0.01;
-    return {
-      minLat: minLat - latPad,
-      maxLat: maxLat + latPad,
-      minLon: minLon - lonPad,
-      maxLon: maxLon + lonPad,
-    };
+  }
+
+  function _updateUserMarker(loc) {
+    if (!_leafletMap) return;
+    if (_userMarker) {
+      _userMarker.setLatLng([loc.lat, loc.lon]);
+    } else {
+      _userMarker = L.marker([loc.lat, loc.lon], { icon: _userLocationIcon(), interactive: false }).addTo(_leafletMap);
+    }
+    if (_userCircle) {
+      _userCircle.setLatLng([loc.lat, loc.lon]);
+    } else {
+      _userCircle = L.circle([loc.lat, loc.lon], { radius: 50, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 1 }).addTo(_leafletMap);
+    }
+  }
+
+  async function centerOnUser() {
+    haptic('light');
+    const btn = document.getElementById('map-locate-btn');
+    if (btn) btn.classList.add('loading');
+    try {
+      const loc = await getUserLocation();
+      if (loc) {
+        state.userLocation = loc;
+        _updateUserMarker(loc);
+        if (_leafletMap) {
+          _leafletMap.setView([loc.lat, loc.lon], 14, { animate: true });
+        }
+      }
+    } finally {
+      if (btn) btn.classList.remove('loading');
+    }
   }
 
   // ============= REPORT =============

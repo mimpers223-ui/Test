@@ -987,6 +987,7 @@ async def find_stations_by_city(
     max_price: float | None = None,
     has_stock: bool = True,
     include_nearby_regions: bool = True,
+    with_coords: bool = False,
     limit: int = 50,
 ) -> list:
     """Ищет АЗС по городу (а не геолокации).
@@ -1086,6 +1087,10 @@ async def find_stations_by_city(
             where.append("s.fuel_types LIKE ?")
             where_params.append(f'%"{fuel_type}"%')
 
+        # === Только с координатами (для карты) ===
+        if with_coords:
+            where.append("s.lat IS NOT NULL AND s.lon IS NOT NULL AND s.lat != 0 AND s.lon != 0")
+
         sql = f"""
             SELECT s.id, s.name, s.operator, s.city, s.region, s.address, s.lat, s.lon,
                    s.fuel_types, s.is_verified,
@@ -1125,6 +1130,9 @@ async def find_stations_by_city(
         f_idx = len(params) + 1
         where.append(f"${f_idx} = ANY(s.fuel_types)")
         params.append(fuel_type)
+
+    if with_coords:
+        where.append("s.lat IS NOT NULL AND s.lon IS NOT NULL AND s.lat != 0 AND s.lon != 0")
 
     if has_stock:
         if fuel_type:

@@ -11,6 +11,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <link rel="stylesheet" href="/app/style.css?v=8">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -211,7 +212,18 @@
       </div>
 
       <div class="map-container" id="map-container">
-        <!-- Map will be rendered here -->
+        <!-- Leaflet map rendered here -->
+      </div>
+
+      <button class="map-locate-btn" id="map-locate-btn" type="button" aria-label="Моё местоположение">
+        <span class="locate-icon">📍</span>
+      </button>
+
+      <div class="map-legend" id="map-legend">
+        <div class="map-legend-item"><span class="dot dot-green"></span>Есть топливо</div>
+        <div class="map-legend-item"><span class="dot dot-yellow"></span>Частично</div>
+        <div class="map-legend-item"><span class="dot dot-red"></span>Нет топлива</div>
+        <div class="map-legend-item"><span class="dot dot-gray"></span>Нет данных</div>
       </div>
 
       <div class="map-stations-list" id="map-stations-list">
@@ -351,6 +363,7 @@
 
 <!-- Scripts -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="/app/app.js?v=8"></script>
 <script async src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js" onerror="console.warn('VK Bridge not loaded');"></script>
 </body>

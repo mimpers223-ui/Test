@@ -426,6 +426,7 @@ async def handle_stations_by_city(request):
       - max_price: макс. цена за литр
       - has_stock: 1 = только с подтверждённым наличием (default 1)
       - include_nearby_regions: 1 = включать соседние регионы (default 1)
+      - with_coords: 1 = только АЗС с координатами (для карты), отключает has_stock и увеличивает лимит
       - limit: макс. кол-во результатов (default 50)
       - telegram_id: для Premium detection
     """
@@ -439,7 +440,8 @@ async def handle_stations_by_city(request):
     region = request.query.get("region") or None
     fuel = request.query.get("fuel") or None
     network = request.query.get("network") or None
-    has_stock = request.query.get("has_stock", "1") == "1"
+    with_coords = request.query.get("with_coords", "0") == "1"
+    has_stock = request.query.get("has_stock", "1") == "1" if not with_coords else False
     include_nearby = request.query.get("include_nearby_regions", "1") == "1"
 
     try:
@@ -448,10 +450,11 @@ async def handle_stations_by_city(request):
         max_price = None
 
     try:
-        limit = int(request.query.get("limit", "50"))
+        default_limit = 500 if with_coords else 50
+        limit = int(request.query.get("limit", str(default_limit)))
         limit = max(1, min(limit, 500))
     except ValueError:
-        limit = 50
+        limit = default_limit
 
     # === Premium detection ===
     telegram_id_raw = request.query.get("telegram_id")
@@ -487,6 +490,7 @@ async def handle_stations_by_city(request):
         max_price=max_price,
         has_stock=has_stock,
         include_nearby_regions=include_nearby,
+        with_coords=with_coords,
         limit=limit,
     )
 
@@ -523,6 +527,7 @@ async def handle_stations_by_city(request):
             "max_price": max_price,
             "has_stock": has_stock,
             "include_nearby_regions": include_nearby,
+            "with_coords": with_coords,
         },
         "disclaimer": DISCLAIMER.replace("<b>", "").replace("</b>", ""),
     }
