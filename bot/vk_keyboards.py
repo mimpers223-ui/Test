@@ -37,16 +37,14 @@ def _link_button(label: str, link: str) -> dict:
 
 
 def _vkapp_button(label: str, app_id: int, hash: str = "", owner_id: int = 0) -> dict:
-    """Кнопка VK Mini App — fallback на ссылку если не настоящий Mini App.
+    """Кнопка VK Mini App — работает и для настоящих Mini App, и для Standalone.
 
-    Standalone-приложения VK не поддерживают type=open_app (ошибка
-    "Приложение не инициализировано"). Используем open_link с прямым URL
-    — приложение откроется во встроенном браузере VK, работает одинаково.
+    По умолчанию использует open_link (надёжный вариант, работает всегда).
+    Если VK_USE_OPEN_APP=1 — нативный open_app (требует настоящий Mini App).
     """
     import os
-    # Прямой URL приложения (работает в любом случае)
     direct_url = os.getenv("VK_MINI_APP_DIRECT_URL", "https://benzin-ryadom.onrender.com/v2")
-    # Если задан VK_USE_OPEN_APP=1, используем нативный open_app (требует настоящий Mini App)
+    # Если задан VK_USE_OPEN_APP=1 — нативный open_app (настоящий Mini App)
     if os.getenv("VK_USE_OPEN_APP", "").lower() in ("1", "true", "yes"):
         link = f"https://vk.com/app{app_id}"
         if hash:
@@ -60,7 +58,7 @@ def _vkapp_button(label: str, app_id: int, hash: str = "", owner_id: int = 0) ->
                 "hash": hash,
             },
         }
-    # По умолчанию — обычная ссылка (надёжный вариант)
+    # По умолчанию — обычная ссылка (надёжный вариант для Standalone)
     return _link_button(label, direct_url)
 
 

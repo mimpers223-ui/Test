@@ -23,8 +23,17 @@
   }
 
   // VK Bridge detection + init
+  // Подождём до полной загрузки DOM и доступности window.vkBridge
   const vkBridgePromise = (async () => {
-    if (!window.vkBridge) return false;
+    // Если bridge ещё не загружен — ждём до 3 сек
+    for (let i = 0; i < 30; i++) {
+      if (window.vkBridge) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (!window.vkBridge) {
+      console.warn('VK Bridge not loaded after 3s — running without VK features');
+      return false;
+    }
     try {
       // Send init first
       await window.vkBridge.send('VKWebAppInit', {});
@@ -51,6 +60,7 @@
       }
       platform.vk = true;
       applyTheme();
+      console.log('VK Bridge initialized', { scheme: platform.scheme, vk_user_id: state.vkUserId });
       return true;
     } catch (e) {
       console.warn('VK Bridge init failed:', e);
