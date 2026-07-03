@@ -1320,29 +1320,25 @@ async def handle_parse(request):
         else:
             results["tg_channels"] = "skipped (no API keys)"
 
-        # benzin_status_bot (интерактивный user-facing бот) — с жёстким таймаутом
-        if tg_api_id and tg_api_hash and os.getenv("TG_SESSION_STRING"):
-            try:
-                import parse_benzin_status_bot
-                # Парсим только крупные города, чтобы не превысить лимиты бота
-                million_cities = [
-                    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
-                    "Казань", "Нижний Новгород", "Челябинск", "Самара",
-                    "Омск", "Ростов-на-Дону", "Уфа", "Красноярск",
-                    "Воронеж", "Волгоград", "Пермь", "Иваново",
-                ]
-                # Жёсткий таймаут 90 секунд, чтобы не зависнуть
-                await asyncio.wait_for(
-                    parse_benzin_status_bot.run(million_cities),
-                    timeout=90.0,
-                )
-                results["benzin_status_bot"] = "ok"
-            except asyncio.TimeoutError:
-                results["benzin_status_bot"] = "timeout (90s)"
-            except Exception as e:
-                results["benzin_status_bot"] = str(e)
-        else:
-            results["benzin_status_bot"] = "skipped (no session string)"
+        # benzin-status.tech (Mini App для @benzin_status_bot) — прямой API
+        try:
+            import parse_benzin_status_tech
+            tech_cities = [
+                "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+                "Казань", "Нижний Новгород", "Челябинск", "Самара",
+                "Омск", "Ростов-на-Дону", "Уфа", "Красноярск",
+                "Воронеж", "Волгоград", "Пермь", "Краснодар",
+                "Иваново", "Тюмень", "Саратов", "Барнаул",
+            ]
+            await asyncio.wait_for(
+                parse_benzin_status_tech.run(tech_cities),
+                timeout=120.0,
+            )
+            results["benzin_status_tech"] = "ok"
+        except asyncio.TimeoutError:
+            results["benzin_status_tech"] = "timeout (120s)"
+        except Exception as e:
+            results["benzin_status_tech"] = str(e)
         
         os.environ.pop("_API_MODE", None)
         logger.info("Background parsers finished: %s", results)

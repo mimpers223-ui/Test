@@ -1969,6 +1969,7 @@ SOURCE_PRIORITY = {
     "user":                1.00,  # отчёт водителя на АЗС — самый доверенный
     "owner":               1.00,  # владелец АЗС
     "telegram":            0.85,  # Telegram-каналы с ценами (бензин_price и т.д.)
+    "benzin_status_tech":  0.85,  # benzin-status.tech Mini App API (crowdsourced)
     "benzin_status_bot":   0.80,  # интерактивный бот @benzin_status_bot
     "yandex":              0.80,  # Яндекс.Заправки (официальный API)
     "lukoil":              0.75,  # сайт сети (точные цены своей сети)
