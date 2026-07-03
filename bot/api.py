@@ -650,6 +650,7 @@ async def handle_search(request):
             "name": s.get("name"),
             "operator": s.get("operator"),
             "city": s.get("city"),
+            "address": s.get("address"),
             "lat": s.get("lat"),
             "lon": s.get("lon"),
             "is_verified": bool(s.get("is_verified")),
