@@ -956,6 +956,15 @@
   }
 
   // Boot
+  window.addEventListener('error', (e) => {
+    console.error('App error:', e.error);
+    if (e.error && dom && dom.toast) {
+      dom.toast.textContent = 'Ошибка: ' + (e.error.message || 'unknown');
+      dom.toast.className = 'toast error';
+      dom.toast.hidden = false;
+    }
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
