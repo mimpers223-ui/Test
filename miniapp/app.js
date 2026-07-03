@@ -46,16 +46,22 @@
     const url = `${API}${path}`;
     const headers = { 'Content-Type': 'application/json' };
     if (tg?.initData) headers['X-Telegram-Init-Data'] = tg.initData;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
     try {
       const res = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: { ...headers, ...(options.headers || {}) },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       return data;
     } catch (e) {
+      if (e.name === 'AbortError') throw new Error('Таймаут запроса (15с)');
       throw e;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -140,6 +146,22 @@
 
   function showLoading() { dom.loadingOverlay.hidden = false; }
   function hideLoading() { dom.loadingOverlay.hidden = true; }
+
+  // Inline skeleton (shown in stations list, not full-screen)
+  function showSkeletons() {
+    dom.stationsList.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const sk = document.createElement('div');
+      sk.className = 'station-card skeleton';
+      sk.innerHTML = `
+        <div class="skeleton-line w70"></div>
+        <div class="skeleton-line w40"></div>
+        <div class="skeleton-line w90"></div>
+      `;
+      dom.stationsList.appendChild(sk);
+    }
+    dom.emptyState.hidden = true;
+  }
 
   function formatTimeAgo(iso) {
     if (!iso) return '';
@@ -281,7 +303,8 @@
       dom.resultsCount.textContent = '0';
       return;
     }
-    showLoading();
+    // Show inline skeletons (not full-screen overlay)
+    showSkeletons();
     try {
       const params = new URLSearchParams();
       params.set('city', state.city);
@@ -294,9 +317,15 @@
     } catch (e) {
       showToast('Ошибка загрузки: ' + e.message, 'error');
       state.stations = [];
-      renderStations();
-    } finally {
-      hideLoading();
+      dom.stationsList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <div class="empty-title">Не удалось загрузить</div>
+          <div class="empty-subtitle">${escape(e.message)}</div>
+        </div>
+      `;
+      dom.emptyState.hidden = true;
+      dom.resultsCount.textContent = '0';
     }
   }
 
@@ -944,7 +973,7 @@
     if (state.city) {
       loadStations();
     } else {
-      // Show welcome state
+      // Show welcome state immediately (no API needed)
       dom.stationsList.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">⛽</div>
@@ -952,6 +981,8 @@
           <div class="empty-subtitle">Выбери город чтобы увидеть АЗС</div>
         </div>
       `;
+      dom.emptyState.hidden = true;
+      dom.resultsCount.textContent = '0';
     }
   }
 
