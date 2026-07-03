@@ -1361,6 +1361,40 @@ async def handle_enrich(request):
     return web.json_response({"ok": True, "message": "enrich started in background"})
 
 
+async def handle_import_osm(request):
+    """GET /api/import-osm?key=... — импорт АЗС из OpenStreetMap (в фоне)."""
+    global _parsers_running
+    if _parsers_running:
+        return web.json_response({"ok": False, "message": "Another job is running"}, status=429)
+    _parsers_running = True
+
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        _parsers_running = False
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    import asyncio
+    import sys
+
+    async def _run_import():
+        scripts_dir = str(Path(__file__).parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        os.environ["_API_MODE"] = "1"
+        try:
+            import import_osm_ivanovo
+            await import_osm_ivanovo.main()
+            logger.info("[osm-import] Done")
+        except Exception as e:
+            logger.warning("[osm-import] Failed: %s", e)
+        global _parsers_running
+        _parsers_running = False
+
+    asyncio.create_task(_run_import())
+    return web.json_response({"ok": True, "message": "OSM import started in background"})
+
+
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     app.on_startup.append(_on_startup)
@@ -1385,6 +1419,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/parse", handle_parse)
     app.router.add_get("/api/parse", handle_parse)
     app.router.add_get("/api/enrich", handle_enrich)
+    app.router.add_get("/api/import-osm", handle_import_osm)
     # Mini App static files
     miniapp_dir = Path(__file__).parent.parent / "miniapp"
     if miniapp_dir.exists():
