@@ -1133,8 +1133,8 @@ async def run_vk_bot():
                     await _send(msg, "✏️ Введи название города:")
                     return
 
-                # --- Address search: "🔍 Найти АЗС по адресу" ---
-                if "Найти АЗС по адресу" in text:
+                # --- Address search: "🔍 Найти по адресу" ---
+                if "Найти по адресу" in text:
                     _user_state[uid] = {"awaiting_address_query": True}
                     await _send(
                         msg,

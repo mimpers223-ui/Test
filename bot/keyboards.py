@@ -365,10 +365,6 @@ def report_city_keyboard() -> InlineKeyboardMarkup:
             ))
         rows.append(row)
     rows.append([InlineKeyboardButton(
-        text="🔍 Найти АЗС по адресу",
-        callback_data="report_address:start",
-    )])
-    rows.append([InlineKeyboardButton(
         text="✏️ Другой город (напишите в сообщении)",
         callback_data="report_city:other",
     )])
@@ -388,6 +384,10 @@ def report_station_keyboard(stations: list[dict], city: str) -> InlineKeyboardMa
             text=label,
             callback_data=f"report_pick:{s['id']}",
         )])
+    buttons.append([InlineKeyboardButton(
+        text="🔍 Найти другую АЗС по адресу",
+        callback_data="report_address:start",
+    )])
     buttons.append([InlineKeyboardButton(
         text="◀️ Назад к городу",
         callback_data="menu:report",

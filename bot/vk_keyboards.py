@@ -213,7 +213,6 @@ def vk_report_city_keyboard() -> str:
             name, _ = TOP_CITIES[j]
             row.append(_button(f"📍 {name}", "primary"))
         rows.append(row)
-    rows.append([_button("🔍 Найти АЗС по адресу", "positive")])
     rows.append([_button("✏️ Другой город", "secondary")])
     rows.append([_button(VK_BTN_HOME)])
     return vk_keyboard(rows)
@@ -225,6 +224,7 @@ def vk_report_station_keyboard(stations: list[dict]) -> str:
     for s in stations[:4]:
         name = (s.get("name") or "АЗС")[:20]
         rows.append([_button(f"#{s['id']} {name}", "primary")])
+    rows.append([_button("🔍 Найти по адресу", "positive")])
     rows.append([_button("◀️ Назад", "secondary")])
     rows.append([_button(VK_BTN_HOME)])
     return vk_keyboard(rows)
