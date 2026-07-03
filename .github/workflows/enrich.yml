@@ -1,47 +1,19 @@
 name: Enrich Addresses (Nominatim)
 
-# Обогащение адресов через Nominatim.
-# Запускается:
-#   - По расписанию (каждые 6ч, 500 АЗС)
-#   - Вручную с параметрами
+# ОТКЛЮЧЁН: enrich работает через Render /api/enrich
+# Этот workflow не работает из-за сетевых проблем GitHub Actions с Supabase.
 
 on:
-  schedule:
-    # Каждые 6 часов: 00:00, 06:00, 12:00, 18:00 UTC
-    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       limit:
-        description: "Лимит АЗС (по умолчанию 500)"
+        description: "Disabled — use Render /api/enrich instead"
         required: false
         default: "500"
-      city:
-        description: "Фильтр по городу (например: Иваново, Москва)"
-        required: false
-        default: ""
-      rate:
-        description: "Запросов в секунду (макс 1 для Nominatim free)"
-        required: false
-        default: "1.0"
 
 jobs:
   enrich:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    if: false  # permanently disabled
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install deps
-        run: pip install aiohttp aiosqlite asyncpg python-dotenv certifi
-      - name: Run enrich
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          USE_SQLITE: "false"
-        run: |
-          python scripts/enrich_addresses.py \
-            --limit ${{ github.event.inputs.limit || '500' }} \
-            --rate ${{ github.event.inputs.rate || '1.0' }} \
-            ${{ github.event.inputs.city && format('--city {0}', github.event.inputs.city) || '' }}
+      - run: echo "Disabled"
