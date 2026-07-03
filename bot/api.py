@@ -1269,6 +1269,33 @@ async def _on_cleanup(app: web.Application) -> None:
     await db.close_db()
 
 
+async def handle_enrich(request):
+    """GET /api/enrich?key=... — обогащение адресов через Nominatim."""
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    import asyncio
+    import sys
+
+    async def _run_enrich():
+        scripts_dir = str(Path(__file__).parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        os.environ["_API_MODE"] = "1"
+        try:
+            import enrich_addresses
+            sys.argv = ["enrich_addresses.py", "--limit", "200", "--provider", "photon"]
+            await enrich_addresses.main()
+            return "ok"
+        except Exception as e:
+            return str(e)
+
+    result = await asyncio.create_task(_run_enrich())
+    return web.json_response({"ok": True, "enrich": result})
+
+
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     app.on_startup.append(_on_startup)
@@ -1292,6 +1319,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/import_prices", handle_import_prices)
     app.router.add_post("/api/parse", handle_parse)
     app.router.add_get("/api/parse", handle_parse)
+    app.router.add_get("/api/enrich", handle_enrich)
     # Mini App static files
     miniapp_dir = Path(__file__).parent.parent / "miniapp"
     if miniapp_dir.exists():
