@@ -1348,6 +1348,34 @@ async def handle_parse(request):
     return web.json_response({"ok": True, "message": "parsers started in background"})
 
 
+async def handle_parse_benzin(request):
+    """GET /api/parse-benzin?key=... — синхронный запуск benzin-status.tech парсера для диагностики."""
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    city = request.query.get("city", "Москва")
+    import asyncio
+    import sys
+    scripts_dir = str(Path(__file__).parent.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+    try:
+        import parse_benzin_status_tech
+        os.environ["_API_MODE"] = "1"
+        count = await parse_benzin_status_tech.run([city])
+        return web.json_response({"ok": True, "city": city, "saved": count})
+    except Exception as e:
+        import traceback
+        return web.json_response({
+            "ok": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }, status=500)
+
+
 # === CORS ===
 # ВНИМАНИЕ: в проде ограничить через ALLOWED_ORIGINS env var.
 ALLOWED_ORIGINS = "*"  # default для dev; в проде задать через env
@@ -1472,6 +1500,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/import_prices", handle_import_prices)
     app.router.add_post("/api/parse", handle_parse)
     app.router.add_get("/api/parse", handle_parse)
+    app.router.add_get("/api/parse-benzin", handle_parse_benzin)
     app.router.add_get("/api/enrich", handle_enrich)
     app.router.add_get("/api/import-osm", handle_import_osm)
     # Mini App static files
