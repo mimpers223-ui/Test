@@ -37,20 +37,31 @@ def _link_button(label: str, link: str) -> dict:
 
 
 def _vkapp_button(label: str, app_id: int, hash: str = "", owner_id: int = 0) -> dict:
-    """Кнопка VK Mini App (открывает приложение)."""
-    # VK Mini App URL: vk.com/app{app_id}#{hash}
-    link = f"https://vk.com/app{app_id}"
-    if hash:
-        link += f"#{hash}"
-    return {
-        "action": {
-            "type": "open_app",
-            "label": label,
-            "app_id": app_id,
-            "owner_id": owner_id,
-            "hash": hash,
-        },
-    }
+    """Кнопка VK Mini App — fallback на ссылку если не настоящий Mini App.
+
+    Standalone-приложения VK не поддерживают type=open_app (ошибка
+    "Приложение не инициализировано"). Используем open_link с прямым URL
+    — приложение откроется во встроенном браузере VK, работает одинаково.
+    """
+    import os
+    # Прямой URL приложения (работает в любом случае)
+    direct_url = os.getenv("VK_MINI_APP_DIRECT_URL", "https://benzin-ryadom.onrender.com/v2")
+    # Если задан VK_USE_OPEN_APP=1, используем нативный open_app (требует настоящий Mini App)
+    if os.getenv("VK_USE_OPEN_APP", "").lower() in ("1", "true", "yes"):
+        link = f"https://vk.com/app{app_id}"
+        if hash:
+            link += f"#{hash}"
+        return {
+            "action": {
+                "type": "open_app",
+                "label": label,
+                "app_id": app_id,
+                "owner_id": owner_id,
+                "hash": hash,
+            },
+        }
+    # По умолчанию — обычная ссылка (надёжный вариант)
+    return _link_button(label, direct_url)
 
 
 def _callback_button(label: str, payload: dict | str, color: str = "secondary") -> dict:
@@ -108,14 +119,14 @@ VK_BTN_HOME = "🏠 В начало"
 
 def vk_main_menu() -> str:
     """Главное меню VK — использует callback-кнопки для inline-навигации."""
+    import os
     rows = [
         [
             _callback_button(VK_BTN_FIND, {"a": "find"}, "primary"),
             _callback_button(VK_BTN_REPORT, {"a": "report_start"}, "positive"),
         ],
     ]
-    # Добавляем кнопку Mini App если задан VK_MINI_APP_ID
-    import os
+    # Добавляем кнопку Mini App / ссылку на приложение
     app_id = os.getenv("VK_MINI_APP_ID", "")
     if app_id and app_id.isdigit():
         rows.append([_vkapp_button("📱 Открыть приложение", int(app_id))])

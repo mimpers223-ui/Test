@@ -802,14 +802,10 @@ async def process_message_event(event: dict) -> None:
                 await show_station(peer_id, station)
 
     elif action == "open_app":
-        # Открыть мини-приложение
-        from config import settings
-        app_id = os.getenv("VK_MINI_APP_ID", "")
-        if app_id and app_id.isdigit():
-            await _vk_send(peer_id, f"👉 Открой приложение: https://vk.com/app{app_id}",
-                          vk_main_menu())
-        else:
-            await _vk_send(peer_id, "Приложение пока не настроено.", vk_main_menu())
+        # Открыть приложение (отправляем ссылку, т.к. open_link работает надёжнее open_app)
+        import os
+        direct_url = os.getenv("VK_MINI_APP_DIRECT_URL", "https://benzin-ryadom.onrender.com/v2")
+        await _vk_send(peer_id, f"👉 Открой приложение:\n{direct_url}", vk_main_menu())
 
     else:
         logger.warning("Unknown action: %r", action)
