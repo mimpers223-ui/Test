@@ -1166,6 +1166,7 @@ async def run_vk_bot():
                     return
 
                 # --- Awaiting address query ---
+                state = _user_state.get(uid, {})
                 if state.get("awaiting_address_query"):
                     _user_state.pop(uid, None)
                     await handle_report_address_search(msg, text)

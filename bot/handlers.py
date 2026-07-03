@@ -2512,7 +2512,8 @@ def register_all_handlers(dp: Dispatcher):
     # Mini App data
     dp.message.register(handle_web_app_data, F.web_app_data)
 
-    # Текстовые кнопки главного меню
+    # Текстовые кнопки главного меню (catch-all — ПОСЛЕ FSM!)
+    dp.message.register(report_address_search, ReportAddressStates.waiting_query, F.text)
     dp.message.register(handle_main_button, F.text)
 
     # Callback (кнопки)
@@ -2533,7 +2534,6 @@ def register_all_handlers(dp: Dispatcher):
 
     # Report flow: поиск АЗС по адресу
     dp.callback_query.register(report_address_start, F.data == "report_address:start")
-    dp.message.register(report_address_search, ReportAddressStates.waiting_query, F.text)
 
     # Review flow: отзывы о качестве бензина
     dp.callback_query.register(review_start, F.data.startswith("review_start:"))
