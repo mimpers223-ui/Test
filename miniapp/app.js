@@ -213,8 +213,11 @@
     state.tab = tab;
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     if (tab === 'home') showScreen('home');
-    else if (tab === 'map') showScreen('map');
-    else if (tab === 'report') openReportSheet();
+    else if (tab === 'map') {
+      showScreen('map');
+      loadMap();
+    }
+    else if (tab === 'report') openReportFlow();
     else if (tab === 'profile') {
       showScreen('profile');
       loadProfile();
@@ -628,6 +631,177 @@
     }
   }
 
+  // ============= REPORT FLOW =============
+  function openReportFlow() {
+    // If no city selected, ask to select first
+    if (!state.city) {
+      showToast('Сначала выбери город', 'warning');
+      showCityPicker();
+      return;
+    }
+    // If we already have stations loaded, show picker
+    showStationPicker();
+  }
+
+  function showStationPicker() {
+    showScreen('pick-station');
+    renderStationPicker();
+    // Focus search
+    setTimeout(() => {
+      const inp = document.getElementById('station-picker-search');
+      if (inp) {
+        inp.value = '';
+        inp.addEventListener('input', onStationPickerSearch, { once: false });
+      }
+    }, 100);
+  }
+
+  function renderStationPicker(query = '') {
+    const list = document.getElementById('station-picker-list');
+    if (!list) return;
+
+    let stations = state.stations || [];
+    if (stations.length === 0) {
+      // Load stations first
+      showLoading();
+      const params = new URLSearchParams();
+      params.set('city', state.city);
+      if (state.fuel) params.set('fuel', state.fuel);
+      params.set('limit', '100');
+      api('/api/stations/by-city?' + params).then(data => {
+        state.stations = data.stations || [];
+        renderStationPicker(query);
+        hideLoading();
+      }).catch(e => {
+        hideLoading();
+        showToast('Ошибка: ' + e.message, 'error');
+        list.innerHTML = '<div class="empty-mini">Не удалось загрузить АЗС</div>';
+      });
+      return;
+    }
+
+    const ql = query.trim().toLowerCase();
+    const filtered = ql ? stations.filter(s => {
+      const name = (s.name || '').toLowerCase();
+      const op = (s.operator || '').toLowerCase();
+      const addr = (s.address || '').toLowerCase();
+      return name.includes(ql) || op.includes(ql) || addr.includes(ql);
+    }) : stations;
+
+    list.innerHTML = '';
+    if (filtered.length === 0) {
+      list.innerHTML = '<div class="empty-mini">Ничего не найдено</div>';
+      return;
+    }
+
+    filtered.forEach(s => {
+      const op = s.operator || s.name || 'АЗС';
+      const addr = s.address || s.city || '';
+      const item = document.createElement('div');
+      item.className = 'map-station-item';
+      item.innerHTML = `
+        <div class="map-station-icon">⛽</div>
+        <div class="map-station-info">
+          <div class="map-station-name">${escape(op)}</div>
+          <div class="map-station-addr">${escape(addr)}</div>
+        </div>
+        <div class="map-station-arrow">›</div>
+      `;
+      item.addEventListener('click', () => {
+        haptic('light');
+        openReportSheet(s.id, op);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function onStationPickerSearch(e) {
+    renderStationPicker(e.target.value);
+  }
+
+  // ============= MAP =============
+  function loadMap() {
+    const container = document.getElementById('map-container');
+    const list = document.getElementById('map-stations-list');
+    if (!container || !list) return;
+
+    if (!state.city) {
+      container.innerHTML = '<div class="map-empty">📍 Выбери город на главной</div>';
+      list.innerHTML = '';
+      return;
+    }
+
+    // Show loading in map
+    container.innerHTML = '<div class="map-empty">⏳ Загрузка карты...</div>';
+
+    // Load stations
+    const params = new URLSearchParams();
+    params.set('city', state.city);
+    if (state.fuel) params.set('fuel', state.fuel);
+    params.set('limit', '50');
+    api('/api/stations/by-city?' + params).then(data => {
+      const stations = (data.stations || []).filter(s => s.lat && s.lon);
+      if (stations.length === 0) {
+        container.innerHTML = '<div class="map-empty">😔 Нет АЗС с координатами в этом городе</div>';
+        list.innerHTML = '';
+        return;
+      }
+
+      // Calculate center
+      const centerLat = stations.reduce((sum, s) => sum + s.lat, 0) / stations.length;
+      const centerLon = stations.reduce((sum, s) => sum + s.lon, 0) / stations.length;
+
+      // Use OpenStreetMap embed (no API key needed)
+      const bbox = calculateBbox(stations);
+      const bboxStr = `${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}`;
+      const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bboxStr}&layer=mapnik&marker=${centerLat},${centerLon}`;
+
+      container.innerHTML = `<iframe src="${mapUrl}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
+
+      // Render list below
+      list.innerHTML = '';
+      stations.slice(0, 20).forEach(s => {
+        const op = s.operator || s.name || 'АЗС';
+        const addr = s.address || s.city || '';
+        const item = document.createElement('div');
+        item.className = 'map-station-item';
+        item.innerHTML = `
+          <div class="map-station-icon">⛽</div>
+          <div class="map-station-info">
+            <div class="map-station-name">${escape(op)}</div>
+            <div class="map-station-addr">${escape(addr)}</div>
+          </div>
+          <div class="map-station-arrow">›</div>
+        `;
+        item.addEventListener('click', () => openStationDetail(s));
+        list.appendChild(item);
+      });
+    }).catch(e => {
+      container.innerHTML = `<div class="map-empty">⚠️ Ошибка: ${escape(e.message)}</div>`;
+      list.innerHTML = '';
+    });
+  }
+
+  function calculateBbox(stations) {
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLon = Infinity, maxLon = -Infinity;
+    stations.forEach(s => {
+      if (s.lat < minLat) minLat = s.lat;
+      if (s.lat > maxLat) maxLat = s.lat;
+      if (s.lon < minLon) minLon = s.lon;
+      if (s.lon > maxLon) maxLon = s.lon;
+    });
+    // Add padding
+    const latPad = (maxLat - minLat) * 0.1 || 0.01;
+    const lonPad = (maxLon - minLon) * 0.1 || 0.01;
+    return {
+      minLat: minLat - latPad,
+      maxLat: maxLat + latPad,
+      minLon: minLon - lonPad,
+      maxLon: maxLon + lonPad,
+    };
+  }
+
   // ============= REPORT =============
   function openReportSheet(stationId, stationName) {
     state.reportSheet = {
@@ -911,6 +1085,11 @@
         closeSheet('report-sheet');
         closeSheet('review-sheet');
       });
+    });
+
+    // Back button in station picker goes to home
+    $$('[data-action="back-to-report"]').forEach(el => {
+      el.addEventListener('click', () => showScreen('home'));
     });
 
     // City picker

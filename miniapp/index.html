@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Бензин рядом</title>
-  <link rel="stylesheet" href="/app/style.css?v=3">
+  <link rel="stylesheet" href="/app/style.css?v=4">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -186,6 +186,36 @@
       </div>
     </section>
 
+    <!-- ============ STATION PICKER SCREEN ============ -->
+    <section class="screen screen-pick-station" data-screen="pick-station">
+      <div class="screen-header">
+        <button class="icon-btn back-btn" data-action="back-to-report">‹</button>
+        <h2 class="screen-title">Выбери АЗС</h2>
+      </div>
+      <div class="search-input-wrap search-input-lg">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="station-picker-search" placeholder="Поиск АЗС по названию или адресу..." autocomplete="off">
+      </div>
+      <div class="cities-list" id="station-picker-list">
+        <!-- Filled dynamically -->
+      </div>
+    </section>
+
+    <!-- ============ MAP SCREEN ============ -->
+    <section class="screen screen-map" data-screen="map">
+      <div class="screen-header">
+        <h2 class="screen-title">🗺️ Карта АЗС</h2>
+      </div>
+
+      <div class="map-container" id="map-container">
+        <!-- Map will be rendered here -->
+      </div>
+
+      <div class="map-stations-list" id="map-stations-list">
+        <!-- Filled dynamically -->
+      </div>
+    </section>
+
   </main>
 
   <!-- ===== BOTTOM NAV ===== -->
@@ -318,7 +348,7 @@
 
 <!-- Scripts -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="/app/app.js?v=3"></script>
+<script src="/app/app.js?v=4"></script>
 <script async src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js" onerror="console.warn('VK Bridge not loaded');"></script>
 </body>
 </html>
