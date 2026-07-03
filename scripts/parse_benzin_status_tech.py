@@ -276,36 +276,106 @@ async def parse_city(session, city: str) -> int:
         return 0
     logger.info("  получено %d АЗС из API", len(stations))
 
+    # Bulk-получаем все наши АЗС в том же bbox (1 запрос вместо N)
+    radius = 0.1
+    min_lat, max_lat = lat - radius, lat + radius
+    min_lng, max_lng = lng - radius, lng + radius
+    if db.USE_SQLITE:
+        our_stations = await db._fetch(
+            """SELECT id, lat, lon, operator, name, address FROM stations
+               WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?""",
+            min_lat, max_lat, min_lng, max_lng,
+        )
+    else:
+        async with db._db.acquire() as conn:
+            our_stations = await conn.fetch(
+                """SELECT id, lat, lon, operator, name, address FROM stations
+                   WHERE lat BETWEEN $1 AND $2 AND lon BETWEEN $3 AND $4""",
+                min_lat, max_lat, min_lng, max_lng,
+            )
+    our_list = [dict(r) if not isinstance(r, dict) else r for r in our_stations]
+    logger.info("  в нашей БД: %d АЗС в том же bbox", len(our_list))
+
+    # Сопоставляем по координатам (O(N*M), но N,M < 1000 — быстро)
+    def match_our(their_lat, their_lng):
+        for ours in our_list:
+            if abs(ours["lat"] - their_lat) < 0.005 and abs(ours["lon"] - their_lng) < 0.005:
+                # Приоритет: сначала по operator, затем по адресу
+                return ours
+        return None
+
     saved = 0
-    # Не качаем детали для ВСЕХ — берём только те, что есть в нашей БД
-    # Для эффективности — сначала проверяем по координатам
-    for st in stations[:100]:  # лимит 100 на город за один проход
+    processed = 0
+    for st in stations[:50]:  # лимит 50 на город
         lat_st = st.get("lat")
         lng_st = st.get("lng")
         if not lat_st or not lng_st:
             continue
-        # Быстрая проверка — есть ли в нашей БД рядом?
-        if db.USE_SQLITE:
-            rows = await db._fetch(
-                "SELECT id FROM stations WHERE ABS(lat - ?) < 0.005 AND ABS(lon - ?) < 0.005 LIMIT 1",
-                lat_st, lng_st,
-            )
-        else:
-            async with db._db.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id FROM stations WHERE ABS(lat - $1) < 0.005 AND ABS(lon - $2) < 0.005 LIMIT 1",
-                    lat_st, lng_st,
-                )
-        if not rows:
+        our = match_our(lat_st, lng_st)
+        if not our:
             continue
-        # Есть в БД — загружаем детали
+        processed += 1
         try:
-            count = await process_station(session, st, city)
+            # Получаем детали только для matching АЗС
+            detail = await fetch_station_detail(session, st.get("id"))
+            if not detail:
+                continue
+            station_obj = detail.get("station", {})
+            count = await save_station_reports(our["id"], station_obj, detail)
             saved += count
         except Exception as e:
             logger.debug("  station %s: %s", st.get("id"), e)
-        await asyncio.sleep(0.2)  # rate limit
+        await asyncio.sleep(0.3)  # rate limit
 
+    logger.info("  matched: %d, сохранено: %d", processed, saved)
+    return saved
+
+
+async def save_station_reports(station_id: int, station_obj: dict, detail: dict) -> int:
+    """Сохраняет все отчёты об АЗС в БД."""
+    saved = 0
+    reports = (detail.get("reports") or [])[:5]
+    for rep in reports:
+        if not rep.get("counted"):
+            continue
+        created_ms = rep.get("createdAt", 0)
+        age_hours = (time.time() * 1000 - created_ms) / 1000 / 3600
+        if age_hours > 24:
+            continue
+        status = rep.get("status")
+        available = STATUS_MAP.get(status)
+        if available is None and not rep.get("fuelTypes"):
+            continue
+        price = rep.get("price")
+        comment = rep.get("comment") or ""
+        limit_liters = rep.get("limitLiters")
+        has_limit = limit_liters is not None
+        canister = rep.get("canister")
+        if canister == "no":
+            comment = "[канистры нет] " + comment
+        elif canister == "yes":
+            comment = "[канистры есть] " + comment
+
+        fuel_types = rep.get("fuelTypes") or ["all"]
+        if not fuel_types:
+            fuel_types = ["all"]
+        for ft in fuel_types:
+            fuel_internal = FUEL_MAP.get(ft, ft)
+            try:
+                await db.add_report(
+                    station_id=station_id,
+                    fuel_type=fuel_internal,
+                    available=available,
+                    price=float(price) if price else None,
+                    source="benzin_status_tech",
+                    queue_size=None,
+                    has_limit=has_limit,
+                    limit_liters=int(limit_liters) if limit_liters else None,
+                    comment=comment[:200] if comment else None,
+                )
+                saved += 1
+            except Exception as e:
+                logger.debug("add_report error: %s", e)
     return saved
 
 
