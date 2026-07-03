@@ -45,7 +45,15 @@ else
     echo "$(date '+%Y-%m-%d %H:%M:%S') tg channels: skipped (no API keys)"
 fi
 
-# 5. Seed data refresh
+# 5. benzin_status_bot (user-facing бот) — требует session string
+if [ -n "$TG_SESSION_STRING" ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') benzin_status_bot..."
+    timeout 120 python scripts/parse_benzin_status_bot.py 2>&1 | tail -5 || echo "  ⏭ benzin_status_bot: skipped"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') benzin_status_bot: skipped (no session string)"
+fi
+
+# 6. Seed data refresh
 echo "$(date '+%Y-%m-%d %H:%M:%S') seed demo..."
 python scripts/seed_top_cities.py 2>&1 | tail -3 || echo "seed FAILED"
 

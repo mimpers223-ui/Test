@@ -1966,18 +1966,19 @@ async def log_event(user_id: int | None, event_type: str, payload: dict | None =
 # Чем выше priority, тем больше доверия к источнику.
 # При конфликте цен берётся источник с max(priority × confidence).
 SOURCE_PRIORITY = {
-    "user":      1.00,  # отчёт водителя на АЗС — самый доверенный
-    "owner":     1.00,  # владелец АЗС
-    "telegram":  0.85,  # Telegram-каналы с ценами (бензин_price и т.д.)
-    "yandex":    0.80,  # Яндекс.Заправки (официальный API)
-    "lukoil":    0.75,  # сайт сети (точные цены своей сети)
-    "gazprom":   0.75,
-    "rosneft":   0.75,
-    "tatneft":   0.75,
-    "bashneft":  0.75,
-    "2gis":      0.65,  # 2ГИС (если платный)
-    "osm":       0.30,  # OSM (нет цен, только мета)
-    "default":   0.50,
+    "user":                1.00,  # отчёт водителя на АЗС — самый доверенный
+    "owner":               1.00,  # владелец АЗС
+    "telegram":            0.85,  # Telegram-каналы с ценами (бензин_price и т.д.)
+    "benzin_status_bot":   0.80,  # интерактивный бот @benzin_status_bot
+    "yandex":              0.80,  # Яндекс.Заправки (официальный API)
+    "lukoil":              0.75,  # сайт сети (точные цены своей сети)
+    "gazprom":             0.75,
+    "rosneft":             0.75,
+    "tatneft":             0.75,
+    "bashneft":            0.75,
+    "2gis":                0.65,  # 2ГИС (если платный)
+    "osm":                 0.30,  # OSM (нет цен, только мета)
+    "default":             0.50,
 }
 
 

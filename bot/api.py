@@ -1319,6 +1319,24 @@ async def handle_parse(request):
                 results["tg_channels"] = str(e)
         else:
             results["tg_channels"] = "skipped (no API keys)"
+
+        # benzin_status_bot (интерактивный user-facing бот)
+        if tg_api_id and tg_api_hash and os.getenv("TG_SESSION_STRING"):
+            try:
+                import parse_benzin_status_bot
+                # Парсим только крупные города, чтобы не превысить лимиты бота
+                million_cities = [
+                    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+                    "Казань", "Нижний Новгород", "Челябинск", "Самара",
+                    "Омск", "Ростов-на-Дону", "Уфа", "Красноярск",
+                    "Воронеж", "Волгоград", "Пермь", "Иваново",
+                ]
+                await parse_benzin_status_bot.run(million_cities)
+                results["benzin_status_bot"] = "ok"
+            except Exception as e:
+                results["benzin_status_bot"] = str(e)
+        else:
+            results["benzin_status_bot"] = "skipped (no session string)"
         
         os.environ.pop("_API_MODE", None)
         logger.info("Background parsers finished: %s", results)
@@ -1390,7 +1408,7 @@ async def handle_enrich(request):
 
 
 async def handle_import_osm(request):
-    """GET /api/import-osm?key=... — импорт АЗС из OpenStreetMap (в фоне)."""
+    """GET /api/import-osm?key=...&region=ivanovo|million — импорт АЗС из OpenStreetMap (в фоне)."""
     global _parsers_running
     if _parsers_running:
         return web.json_response({"ok": False, "message": "Another job is running"}, status=429)
@@ -1402,6 +1420,8 @@ async def handle_import_osm(request):
         _parsers_running = False
         return web.json_response({"error": "unauthorized"}, status=401)
 
+    region = request.query.get("region", "ivanovo").lower()
+
     import asyncio
     import sys
 
@@ -1411,16 +1431,21 @@ async def handle_import_osm(request):
             sys.path.insert(0, scripts_dir)
         os.environ["_API_MODE"] = "1"
         try:
-            import import_osm_ivanovo
-            await import_osm_ivanovo.main()
-            logger.info("[osm-import] Done")
+            if region == "million":
+                import import_osm_million_cities
+                await import_osm_million_cities.main()
+                logger.info("[osm-import-million] Done")
+            else:
+                import import_osm_ivanovo
+                await import_osm_ivanovo.main()
+                logger.info("[osm-import-ivanovo] Done")
         except Exception as e:
-            logger.warning("[osm-import] Failed: %s", e)
+            logger.warning("[osm-import-%s] Failed: %s", region, e)
         global _parsers_running
         _parsers_running = False
 
     asyncio.create_task(_run_import())
-    return web.json_response({"ok": True, "message": "OSM import started in background"})
+    return web.json_response({"ok": True, "message": f"OSM import ({region}) started in background"})
 
 
 def create_app() -> web.Application:
