@@ -221,6 +221,10 @@ def station_actions_keyboard(station_id: int, has_statuses: bool = True, lat: fl
         callback_data=f"report:{station_id}",
     )])
     buttons.append([InlineKeyboardButton(
+        text="⭐ Оценить качество бензина",
+        callback_data=f"review_start:{station_id}",
+    )])
+    buttons.append([InlineKeyboardButton(
         text="🔔 Подписаться на эту АЗС",
         callback_data=f"sub_station:{station_id}",
     )])
@@ -361,6 +365,10 @@ def report_city_keyboard() -> InlineKeyboardMarkup:
             ))
         rows.append(row)
     rows.append([InlineKeyboardButton(
+        text="🔍 Найти АЗС по адресу",
+        callback_data="report_address:start",
+    )])
+    rows.append([InlineKeyboardButton(
         text="✏️ Другой город (напишите в сообщении)",
         callback_data="report_city:other",
     )])
@@ -385,3 +393,69 @@ def report_station_keyboard(stations: list[dict], city: str) -> InlineKeyboardMa
         callback_data="menu:report",
     )])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def report_address_results_keyboard(stations: list[dict]) -> InlineKeyboardMarkup:
+    """Список АЗС, найденных по адресу, для выбора при отчёте."""
+    buttons = []
+    for s in stations[:10]:
+        name = (s.get("name") or s.get("operator") or "АЗС")[:25]
+        addr = (s.get("address") or "")[:20]
+        label = f"⛽ {name}"
+        if addr:
+            label += f" — {addr}"
+        buttons.append([InlineKeyboardButton(
+            text=label,
+            callback_data=f"report_pick:{s['id']}",
+        )])
+    buttons.append([InlineKeyboardButton(
+        text="🔍 Найти другую АЗС",
+        callback_data="report_address:start",
+    )])
+    buttons.append([InlineKeyboardButton(
+        text="◀️ Назад",
+        callback_data="menu:report",
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def review_rating_keyboard(station_id: int, fuel_type: str) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора рейтинга качества бензина (0-5 звёзд)."""
+    return with_home_inline(InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"review:{station_id}:{fuel_type}:5"),
+                InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"review:{station_id}:{fuel_type}:4"),
+            ],
+            [
+                InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"review:{station_id}:{fuel_type}:3"),
+                InlineKeyboardButton(text="⭐⭐", callback_data=f"review:{station_id}:{fuel_type}:2"),
+            ],
+            [
+                InlineKeyboardButton(text="⭐", callback_data=f"review:{station_id}:{fuel_type}:1"),
+                InlineKeyboardButton(text="Без звёзд", callback_data=f"review:{station_id}:{fuel_type}:0"),
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data=f"report:{station_id}"),
+            ],
+        ],
+    ))
+
+
+def review_fuel_keyboard(station_id: int) -> InlineKeyboardMarkup:
+    """Выбор типа топлива для отзыва."""
+    return with_home_inline(InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⛽ АИ-92", callback_data=f"review_fuel:{station_id}:92"),
+                InlineKeyboardButton(text="⛽ АИ-95", callback_data=f"review_fuel:{station_id}:95"),
+            ],
+            [
+                InlineKeyboardButton(text="⛽ АИ-98", callback_data=f"review_fuel:{station_id}:98"),
+                InlineKeyboardButton(text="🛢 Дизель", callback_data=f"review_fuel:{station_id}:diesel"),
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Отмена", callback_data="cancel"),
+            ],
+        ],
+    ))

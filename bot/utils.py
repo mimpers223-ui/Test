@@ -212,6 +212,16 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
     if addr_parts:
         lines.append(f"📍 <b>{', '.join(addr_parts)}</b>")
 
+    # Рейтинг качества бензина (если есть)
+    avg_rating = station.get("avg_rating")
+    total_reviews = station.get("total_reviews", 0)
+    if avg_rating and total_reviews > 0:
+        full_stars = int(avg_rating)
+        half_star = 1 if avg_rating - full_stars >= 0.5 else 0
+        empty_stars = 5 - full_stars - half_star
+        stars = "⭐" * full_stars + ("✨" if half_star else "") + "☆" * empty_stars
+        lines.append(f"⭐ {stars} {avg_rating} ({total_reviews} отзывов)")
+
     # Координаты (мелко, для справки)
     lat = station.get("lat")
     lon = station.get("lon")

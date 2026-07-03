@@ -1547,6 +1547,160 @@ async def find_stations_by_name(query: str, limit: int = 5) -> list:
         return [dict(r) for r in rows]
 
 
+async def find_stations_by_address(query: str, limit: int = 10) -> list:
+    """Ищет АЗС по адресу (название + улица).
+
+    Примеры запросов:
+      - «Лукойл Мира»
+      - «Газпром Ленина 42»
+      - «Роснефть Советская»
+    """
+    if USE_SQLITE:
+        sql = """
+            SELECT id, name, operator, city, address, lat, lon, is_verified
+            FROM stations
+            WHERE is_active = 1
+              AND (py_lower(name) LIKE ? OR py_lower(operator) LIKE ?
+                   OR py_lower(address) LIKE ? OR py_lower(city) LIKE ?
+                   OR (py_lower(name) || ' ' || py_lower(address)) LIKE ?)
+            ORDER BY
+                CASE WHEN py_lower(name) LIKE ? THEN 0 ELSE 1 END,
+                CASE WHEN py_lower(address) LIKE ? THEN 0 ELSE 1 END,
+                operator, name
+            LIMIT ?
+        """
+        like = f"%{query.lower()}%"
+        combined = f"%{query.lower()}%"
+        async with _db.execute(sql, (like, like, like, like, combined, like, like, limit)) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+    else:
+        async with _db.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, name, operator, city, address, lat, lon, is_verified
+                FROM stations
+                WHERE is_active = TRUE
+                  AND (name ILIKE $1 OR operator ILIKE $1
+                       OR address ILIKE $1 OR city ILIKE $1
+                       OR (name || ' ' || address) ILIKE $1)
+                ORDER BY
+                    CASE WHEN name ILIKE $1 THEN 0 ELSE 1 END,
+                    CASE WHEN address ILIKE $1 THEN 0 ELSE 1 END,
+                    operator NULLS LAST, name
+                LIMIT $2
+                """,
+                f"%{query}%", limit,
+            )
+        return [dict(r) for r in rows]
+
+
+async def add_review(
+    station_id: int,
+    user_id: int,
+    fuel_type: str,
+    rating: int,
+    comment: str | None = None,
+) -> int:
+    """Добавляет отзыв о качестве бензина на АЗС.
+
+    rating: 0-5 звёзд (0 = ужасно, 5 = отлично).
+    """
+    if rating < 0 or rating > 5:
+        raise ValueError("Rating must be 0-5")
+
+    if USE_SQLITE:
+        async with _db.execute(
+            """INSERT INTO reviews (station_id, user_id, fuel_type, rating, comment)
+               VALUES (?, ?, ?, ?, ?)""",
+            (station_id, user_id, fuel_type, rating, comment),
+        ) as cur:
+            review_id = cur.lastrowid
+        await _db.commit()
+    else:
+        async with _db.acquire() as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO reviews (station_id, user_id, fuel_type, rating, comment)
+                   VALUES ($1, $2, $3, $4, $5)
+                   RETURNING id""",
+                station_id, user_id, fuel_type, rating, comment,
+            )
+            review_id = row["id"]
+    return review_id
+
+
+async def get_station_rating(station_id: int) -> dict:
+    """Возвращает рейтинг АЗС на основе отзывов.
+
+    Возвращает: {avg_rating, total_reviews, by_fuel: {fuel: avg}}
+    """
+    if USE_SQLITE:
+        async with _db.execute(
+            """SELECT fuel_type, AVG(rating) as avg_rating, COUNT(*) as cnt
+               FROM reviews
+               WHERE station_id = ?
+               GROUP BY fuel_type""",
+            (station_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    else:
+        async with _db.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT fuel_type, AVG(rating) as avg_rating, COUNT(*) as cnt
+                   FROM reviews
+                   WHERE station_id = $1
+                   GROUP BY fuel_type""",
+                station_id,
+            )
+
+    by_fuel = {}
+    total_reviews = 0
+    total_sum = 0.0
+    for row in rows:
+        fuel = row["fuel_type"]
+        avg = float(row["avg_rating"])
+        cnt = row["cnt"]
+        by_fuel[fuel] = {"avg": round(avg, 1), "count": cnt}
+        total_reviews += cnt
+        total_sum += avg * cnt
+
+    avg_rating = round(total_sum / total_reviews, 1) if total_reviews > 0 else 0.0
+    return {
+        "avg_rating": avg_rating,
+        "total_reviews": total_reviews,
+        "by_fuel": by_fuel,
+    }
+
+
+async def get_station_recent_reviews(station_id: int, limit: int = 5) -> list:
+    """Возвращает последние отзывы об АЗС."""
+    if USE_SQLITE:
+        async with _db.execute(
+            """SELECT r.rating, r.fuel_type, r.comment, r.created_at,
+                      u.username, u.first_name
+               FROM reviews r
+               LEFT JOIN users u ON r.user_id = u.id
+               WHERE r.station_id = ?
+               ORDER BY r.created_at DESC
+               LIMIT ?""",
+            (station_id, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+    else:
+        async with _db.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT r.rating, r.fuel_type, r.comment, r.created_at,
+                          u.username, u.first_name
+                   FROM reviews r
+                   LEFT JOIN users u ON r.user_id = u.id
+                   WHERE r.station_id = $1
+                   ORDER BY r.created_at DESC
+                   LIMIT $2""",
+                station_id, limit,
+            )
+    return [dict(r) for r in rows]
+
+
 async def get_station_current_status(station_id: int) -> list:
     """Возвращает текущий статус АЗС по всем видам топлива (свежие < 24ч).
 

@@ -127,6 +127,7 @@ def vk_station_actions(station_id: int, lat: float | None = None, lon: float | N
         yandex_url = f"https://yandex.ru/maps/?rtext={lat},{lon}&rtt=auto"
         rows.append([_link_button("🗺 Маршрут", yandex_url)])
     rows.append([_button(f"📝 Отчёт #{station_id}", "positive")])
+    rows.append([_button(f"⭐ Оценить качество #{station_id}", "primary")])
     rows.append([_button(f"🔔 Подписка #{station_id}", "primary")])
     rows.append([_button("◀️ Назад к списку", "secondary")])
     rows.append([_button(VK_BTN_HOME)])
@@ -212,6 +213,7 @@ def vk_report_city_keyboard() -> str:
             name, _ = TOP_CITIES[j]
             row.append(_button(f"📍 {name}", "primary"))
         rows.append(row)
+    rows.append([_button("🔍 Найти АЗС по адресу", "positive")])
     rows.append([_button("✏️ Другой город", "secondary")])
     rows.append([_button(VK_BTN_HOME)])
     return vk_keyboard(rows)
@@ -226,3 +228,53 @@ def vk_report_station_keyboard(stations: list[dict]) -> str:
     rows.append([_button("◀️ Назад", "secondary")])
     rows.append([_button(VK_BTN_HOME)])
     return vk_keyboard(rows)
+
+
+def vk_report_address_results_keyboard(stations: list[dict]) -> str:
+    """Список АЗС, найденных по адресу."""
+    rows = []
+    for s in stations[:5]:
+        name = (s.get("name") or "АЗС")[:18]
+        addr = (s.get("address") or "")[:15]
+        label = f"#{s['id']} {name}"
+        if addr:
+            label += f" {addr}"
+        rows.append([_button(label, "primary")])
+    rows.append([_button("🔍 Найти другую", "positive")])
+    rows.append([_button("◀️ Назад", "secondary")])
+    rows.append([_button(VK_BTN_HOME)])
+    return vk_keyboard(rows)
+
+
+def vk_review_fuel_keyboard(station_id: int) -> str:
+    """Выбор типа топлива для отзыва."""
+    return vk_keyboard([
+        [
+            _button(f"⛽ 92 #{station_id}", "primary"),
+            _button(f"⛽ 95 #{station_id}", "primary"),
+        ],
+        [
+            _button(f"⛽ 98 #{station_id}", "secondary"),
+            _button(f"🛢 ДТ #{station_id}", "secondary"),
+        ],
+        [_button("◀️ Отмена", "secondary")],
+    ])
+
+
+def vk_review_rating_keyboard(station_id: int, fuel: str) -> str:
+    """Клавиатура для выбора рейтинга качества бензина (0-5 звёзд)."""
+    return vk_keyboard([
+        [
+            _button(f"⭐⭐⭐⭐⭐ #{station_id}:{fuel}", "positive"),
+            _button(f"⭐⭐⭐⭐ #{station_id}:{fuel}", "positive"),
+        ],
+        [
+            _button(f"⭐⭐⭐ #{station_id}:{fuel}", "secondary"),
+            _button(f"⭐⭐ #{station_id}:{fuel}", "secondary"),
+        ],
+        [
+            _button(f"⭐ #{station_id}:{fuel}", "negative"),
+            _button(f"Без звёзд #{station_id}:{fuel}", "secondary"),
+        ],
+        [_button("◀️ Назад", "secondary")],
+    ])

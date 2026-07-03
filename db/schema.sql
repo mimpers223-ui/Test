@@ -91,6 +91,22 @@ CREATE INDEX IF NOT EXISTS idx_reports_created ON reports (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_confidence ON reports (confidence DESC);
 
 -- =====================================================
+-- Отзывы о качестве бензина
+-- =====================================================
+CREATE TABLE IF NOT EXISTS reviews (
+    id BIGSERIAL PRIMARY KEY,
+    station_id BIGINT NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    fuel_type TEXT NOT NULL,                      -- '92', '95', '98', 'diesel'
+    rating INTEGER NOT NULL CHECK (rating >= 0 AND rating <= 5),  -- 0-5 звёзд
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_station ON reviews (station_id, fuel_type);
+CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews (created_at DESC);
+
+-- =====================================================
 -- Подписки на уведомления
 -- =====================================================
 CREATE TABLE IF NOT EXISTS subscriptions (

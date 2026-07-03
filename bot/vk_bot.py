@@ -15,8 +15,10 @@ from config import settings
 from db import (
     add_owner_station,
     add_report,
+    add_review,
     add_subscription,
     find_nearest_stations,
+    find_stations_by_address,
     find_stations_by_city,
     find_stations_by_name,
     get_or_create_user,
@@ -24,6 +26,7 @@ from db import (
     get_premium_info,
     get_station_by_id,
     get_station_current_status,
+    get_station_rating,
     get_stations_with_statuses,
     get_user_id_by_telegram_id,
     is_owner_of_station,
@@ -47,6 +50,9 @@ from vk_keyboards import (
     vk_subscribe_radius_keyboard,
     vk_report_city_keyboard,
     vk_report_station_keyboard,
+    vk_report_address_results_keyboard,
+    vk_review_fuel_keyboard,
+    vk_review_rating_keyboard,
     vk_premium_keyboard,
     vk_donate_keyboard,
     _button,
@@ -524,6 +530,10 @@ async def handle_station_detail_text(msg: Message, station_id: int):
         await _send(msg, "АЗС не найдена", vk_main_menu())
         return
     statuses = await get_station_current_status(station_id)
+    # Добавляем рейтинг в station dict для отображения
+    rating_info = await get_station_rating(station_id)
+    station["avg_rating"] = rating_info["avg_rating"]
+    station["total_reviews"] = rating_info["total_reviews"]
     text = format_station_card(station, statuses)
     kb = vk_station_actions(station_id, lat=station.get("lat"), lon=station.get("lon"))
     await _send(msg, text, kb)
@@ -575,6 +585,42 @@ async def handle_report_city_text(msg: Message, city: str):
         await _send(msg, f"😔 В {city} АЗС не найдены.", vk_main_menu())
         return
     await _send(msg, f"⛽ Выбери АЗС в {city}:", vk_report_station_keyboard(stations))
+
+
+async def handle_report_address_search(msg: Message, query: str):
+    """Поиск АЗС по адресу (название + улица)."""
+    if len(query) < 3:
+        await _send(msg, "⚠️ Введи минимум 3 символа.", vk_main_menu())
+        return
+    stations = await find_stations_by_address(query, limit=10)
+    if not stations:
+        await _send(
+            f"😔 АЗС по запросу «{query}» не найдены.\nПопробуй другой запрос.",
+            vk_report_city_keyboard(),
+        )
+        return
+    await _send(msg, f"🔍 Найдено {len(stations)} АЗС:", vk_report_address_results_keyboard(stations))
+
+
+async def handle_review_submit(msg: Message, station_id: int, fuel: str, rating: int):
+    """Отправка отзыва о качестве бензина."""
+    try:
+        user_db_id = await get_or_create_user(msg)
+        if user_db_id:
+            await add_review(
+                station_id=station_id,
+                user_id=user_db_id,
+                fuel_type=fuel,
+                rating=rating,
+            )
+    except Exception as e:
+        logger.warning("review_submit failed: %s", e)
+    stars = "⭐" * rating if rating > 0 else "Без звёзд"
+    fuel_label = f"АИ-{fuel}" if fuel != "diesel" else "Дизель"
+    await _send(
+        f"✅ Отзыв принят!\n\nАЗС #{station_id}, {fuel_label}\nРейтинг: {stars}\n\nСпасибо за оценку!",
+        vk_main_menu(),
+    )
 
 
 async def handle_sub_station_text(msg: Message, station_id: int):
@@ -1085,6 +1131,58 @@ async def run_vk_bot():
                     else:
                         _user_state[uid] = {"awaiting_city": True}
                     await _send(msg, "✏️ Введи название города:")
+                    return
+
+                # --- Address search: "🔍 Найти АЗС по адресу" ---
+                if "Найти АЗС по адресу" in text:
+                    _user_state[uid] = {"awaiting_address_query": True}
+                    await _send(
+                        msg,
+                        "🔍 Напиши название АЗС и улицу:\n\n"
+                        "Например:\n"
+                        "• Лукойл Мира\n"
+                        "• Газпром Ленина 42\n"
+                        "• Роснефть Советская",
+                    )
+                    return
+
+                # --- Awaiting address query ---
+                if state.get("awaiting_address_query"):
+                    _user_state.pop(uid, None)
+                    await handle_report_address_search(msg, text)
+                    return
+
+                # --- Review: "⭐ Оценить качество бензина" ---
+                if "Оценить качество" in text:
+                    # Извлекаем station_id из кнопки "📝 Отчёт #123"
+                    station_match = re.search(r"#(\d+)", text)
+                    if station_match:
+                        sid = int(station_match.group(1))
+                        _user_state[uid] = {"review_station": sid}
+                        await _send(msg, "⛽ Выбери тип топлива:", vk_review_fuel_keyboard(sid))
+                    return
+
+                # --- Review fuel type: "⛽ 92 #123" ---
+                review_fuel_match = re.match(r"[⛽🛢]\s*(\d+|ДТ|Дизель)\s+#(\d+)", text)
+                if review_fuel_match and state.get("review_station"):
+                    fuel_text = review_fuel_match.group(1)
+                    fuel_map = {"92": "92", "95": "95", "98": "98", "ДТ": "diesel", "Дизель": "diesel"}
+                    fuel = fuel_map.get(fuel_text)
+                    if fuel:
+                        sid = state["review_station"]
+                        _user_state[uid] = {"review_station": sid, "review_fuel": fuel}
+                        await _send(msg, f"⛽ АИ-{fuel_text if fuel != 'diesel' else 'ДТ'} — оцени качество:", vk_review_rating_keyboard(sid, fuel))
+                    return
+
+                # --- Review rating: "⭐⭐⭐⭐⭐ #123:92" ---
+                review_rating_match = re.match(r"((?:⭐|Без звёзд)+)\s+#(\d+):(\w+)", text)
+                if review_rating_match and state.get("review_station"):
+                    stars_text = review_rating_match.group(1)
+                    sid = state["review_station"]
+                    fuel = state.get("review_fuel", "92")
+                    rating = stars_text.count("⭐")
+                    _user_state.pop(uid, None)
+                    await handle_review_submit(msg, sid, fuel, rating)
                     return
 
                 # --- Cancel / back ---

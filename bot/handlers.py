@@ -33,9 +33,11 @@ from db import (
     _fetch,
     add_owner_station,
     add_report,
+    add_review,
     add_subscription,
     activate_premium,
     find_nearest_stations,
+    find_stations_by_address,
     find_stations_by_city,
     find_stations_by_name,
     get_or_create_user,
@@ -44,6 +46,8 @@ from db import (
     get_premium_info,
     get_station_by_id,
     get_station_current_status,
+    get_station_rating,
+    get_station_recent_reviews,
     get_stations_with_statuses,
     get_user_id_by_telegram_id,
     is_owner_of_station,
@@ -69,6 +73,9 @@ from keyboards import (
     web_app_keyboard,
     report_city_keyboard,
     report_station_keyboard,
+    report_address_results_keyboard,
+    review_rating_keyboard,
+    review_fuel_keyboard,
     BTN_FIND, BTN_REPORT, BTN_SUBSCRIBE, BTN_PROFILE,
     BTN_OWNER, BTN_MY_STATIONS, BTN_HELP, BTN_PREMIUM, BTN_HOME,
     BTN_APP, BTN_BUG, BTN_IDEA, BTN_DONATE,
@@ -161,6 +168,16 @@ class BugReportStates(StatesGroup):
 # === FSM: предложение ===
 class IdeaStates(StatesGroup):
     waiting_idea = State()
+
+
+# === FSM: поиск АЗС по адресу ===
+class ReportAddressStates(StatesGroup):
+    waiting_query = State()
+
+
+# === FSM: отзыв о качестве бензина ===
+class ReviewStates(StatesGroup):
+    waiting_comment = State()
 
 
 # === Проверка подписки на канал ===
@@ -1821,6 +1838,10 @@ async def show_station_details(callback: CallbackQuery):
         return
 
     statuses = await get_station_current_status(station_id)
+    # Добавляем рейтинг в station dict для отображения
+    rating_info = await get_station_rating(station_id)
+    station["avg_rating"] = rating_info["avg_rating"]
+    station["total_reviews"] = rating_info["total_reviews"]
     text = format_station_card(station, statuses)
     lat = station.get("lat")
     lon = station.get("lon")
@@ -2104,6 +2125,105 @@ async def report_submit(callback: CallbackQuery):
         f"✅ <b>Спасибо! Отчёт записан.</b>\n\n"
         f"АЗС #{station_id}, АИ-{fuel}: {status_text}\n\n"
         f"Твой отчёт увидят другие водители.{celebration}",
+    )
+    await callback.answer()
+
+
+# === Report flow: поиск АЗС по адресу ===
+async def report_address_start(callback: CallbackQuery, state: FSMContext):
+    """Начало поиска АЗС по адресу."""
+    await callback.answer()
+    await state.set_state(ReportAddressStates.waiting_query)
+    await callback.message.answer(
+        "🔍 <b>Напиши название АЗС и улицу</b>\n\n"
+        "Например:\n"
+        "• <code>Лукойл Мира</code>\n"
+        "• <code>Газпром Ленина 42</code>\n"
+        "• <code>Роснефть Советская</code>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Отмена", callback_data="menu:report")]
+        ]),
+    )
+
+
+async def report_address_search(message: Message, state: FSMContext):
+    """Поиск АЗС по введённому запросу."""
+    query = message.text.strip()
+    if len(query) < 3:
+        await message.answer("⚠️ Введи минимум 3 символа")
+        return
+
+    stations = await find_stations_by_address(query, limit=10)
+    await state.clear()
+
+    if not stations:
+        await message.answer(
+            f"😔 АЗС по запросу «{query}» не найдены.\n"
+            "Попробуй другой запрос или вернись к выбору города.",
+            reply_markup=report_city_keyboard(),
+        )
+        return
+
+    await message.answer(
+        f"🔍 <b>Найдено {len(stations)} АЗС:</b>",
+        reply_markup=report_address_results_keyboard(stations),
+    )
+
+
+# === Review flow: выбор типа топлива для отзыва ===
+async def review_start(callback: CallbackQuery):
+    """Начало отзыва — выбор типа топлива."""
+    station_id = int(callback.data.split(":")[1])
+    await callback.answer()
+    await callback.message.answer(
+        "⭐ <b>Оцени качество бензина</b>\n\n"
+        "Выбери тип топлива:",
+        reply_markup=review_fuel_keyboard(station_id),
+    )
+
+
+async def review_pick_fuel(callback: CallbackQuery):
+    """Выбран тип топлива — показать рейтинг."""
+    parts = callback.data.split(":")
+    station_id = int(parts[1])
+    fuel = parts[2]
+    await callback.answer()
+    await callback.message.answer(
+        f"⛽ <b>АИ-{fuel if fuel != 'diesel' else 'ДТ'}</b> — оцени качество:",
+        reply_markup=review_rating_keyboard(station_id, fuel),
+    )
+
+
+async def review_submit(callback: CallbackQuery):
+    """Отправка отзыва с рейтингом."""
+    parts = callback.data.split(":")
+    station_id = int(parts[1])
+    fuel = parts[2]
+    rating = int(parts[3])
+
+    await get_or_create_user(callback.message)
+    telegram_id = _tg_id(callback.message)
+    uid = await get_user_id_by_telegram_id(telegram_id)
+
+    if not uid:
+        await callback.answer("Ошибка. Попробуй /start", show_alert=True)
+        return
+
+    await add_review(
+        station_id=station_id,
+        user_id=uid,
+        fuel_type=fuel,
+        rating=rating,
+    )
+
+    stars = "⭐" * rating if rating > 0 else "Без звёзд"
+    fuel_label = f"АИ-{fuel}" if fuel != "diesel" else "Дизель"
+
+    await callback.message.answer(
+        f"✅ <b>Отзыв принят!</b>\n\n"
+        f"АЗС #{station_id}, {fuel_label}\n"
+        f"Рейтинг: {stars}\n\n"
+        f"Спасибо за оценку! Это помогает другим водителям.",
     )
     await callback.answer()
 
@@ -2395,6 +2515,15 @@ def register_all_handlers(dp: Dispatcher):
     dp.callback_query.register(subscribe_station, F.data.startswith("sub_station:"))
     dp.callback_query.register(handle_cancel, F.data == "cancel")
     dp.callback_query.register(handle_back_to_list, F.data == "back_to_list")
+
+    # Report flow: поиск АЗС по адресу
+    dp.callback_query.register(report_address_start, F.data == "report_address:start")
+    dp.message.register(report_address_search, ReportAddressStates.waiting_query, F.text)
+
+    # Review flow: отзывы о качестве бензина
+    dp.callback_query.register(review_start, F.data.startswith("review_start:"))
+    dp.callback_query.register(review_pick_fuel, F.data.startswith("review_fuel:"))
+    dp.callback_query.register(review_submit, F.data.startswith("review:"))
 
     # Owner-режим
     dp.callback_query.register(owner_quick_set, F.data.startswith("oset:"))

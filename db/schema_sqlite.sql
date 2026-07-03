@@ -78,6 +78,20 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE INDEX IF NOT EXISTS idx_reports_station ON reports (station_id, fuel_type);
 CREATE INDEX IF NOT EXISTS idx_reports_created ON reports (created_at DESC);
 
+-- Отзывы о качестве бензина
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    fuel_type TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating >= 0 AND rating <= 5),
+    comment TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_station ON reviews (station_id, fuel_type);
+CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews (created_at DESC);
+
 -- Подписки на уведомления
 CREATE TABLE IF NOT EXISTS subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
