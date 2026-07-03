@@ -327,6 +327,12 @@ async def query_mini_app(client, bot_entity, cities: list[str]) -> int:
 
 
 async def run(cities: list[str]):
+    logger.info("=== Запуск парсера @%s (Mini App) ===", BOT_USERNAME)
+    logger.info("Городов: %d, API keys: id=%s hash=%s session=%s",
+                len(cities),
+                "✓" if TG_API_ID else "✗",
+                "✓" if TG_API_HASH else "✗",
+                "✓" if TG_SESSION_STRING else "✗")
     if not TG_API_ID or not TG_API_HASH:
         logger.error("TG_API_ID / TG_API_HASH не заданы.")
         sys.exit(1)
@@ -337,9 +343,13 @@ async def run(cities: list[str]):
         client = TelegramClient(StringSession(TG_SESSION_STRING), int(TG_API_ID), TG_API_HASH)
     else:
         client = TelegramClient(str(SESSION_PATH), int(TG_API_ID), TG_API_HASH)
-    await client.start()
+    try:
+        await client.start()
+    except Exception as e:
+        logger.error("Не удалось подключиться к Telegram: %s", e)
+        return 0
     me = await client.get_me()
-    logger.info("Authorized as @%s", me.username)
+    logger.info("Authorized as @%s (id=%d)", me.username, me.id)
 
     if not os.getenv("_API_MODE"):
         await db.init_db()
@@ -347,12 +357,17 @@ async def run(cities: list[str]):
 
     try:
         bot_entity = await client.get_entity(BOT_USERNAME)
+        logger.info("Бот найден: %s (id=%d)", BOT_USERNAME, bot_entity.id)
     except Exception as e:
         logger.error("Не удалось найти бота @%s: %s", BOT_USERNAME, e)
         await client.disconnect()
         return 0
 
-    total = await query_mini_app(client, bot_entity, cities)
+    try:
+        total = await query_mini_app(client, bot_entity, cities)
+    except Exception as e:
+        logger.exception("Ошибка в query_mini_app: %s", e)
+        total = 0
     logger.info("=== Total miniapp reports saved: %d ===", total)
 
     await client.disconnect()
