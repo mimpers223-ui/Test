@@ -1512,22 +1512,26 @@ async def add_subscription(
 
 
 async def find_stations_by_name(query: str, limit: int = 5) -> list:
-    """Ищет АЗС по имени (для /find без геолокации)."""
+    """Ищет АЗС по имени, оператору, городу или адресу (для /find без геолокации)."""
     if USE_SQLITE:
         # py_lower() корректно работает с кириллицей (в отличие от LOWER()).
         sql = """
             SELECT id, name, operator, city, address, lat, lon, is_verified
             FROM stations
             WHERE is_active = 1
-              AND (py_lower(name) LIKE ? OR py_lower(operator) LIKE ? OR py_lower(city) LIKE ?)
+              AND (py_lower(name) LIKE ? OR py_lower(operator) LIKE ?
+                   OR py_lower(city) LIKE ? OR py_lower(address) LIKE ?)
             ORDER BY
-                CASE WHEN py_lower(name) LIKE ? THEN 0 ELSE 1 END,
+                CASE WHEN py_lower(name) LIKE ? THEN 0
+                     WHEN py_lower(operator) LIKE ? THEN 1
+                     WHEN py_lower(address) LIKE ? THEN 2
+                     ELSE 3 END,
                 operator,
                 name
             LIMIT ?
         """
         like = f"%{query.lower()}%"
-        async with _db.execute(sql, (like, like, like, like, limit)) as cur:
+        async with _db.execute(sql, (like, like, like, like, like, like, like, limit)) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
     else:
@@ -1537,9 +1541,13 @@ async def find_stations_by_name(query: str, limit: int = 5) -> list:
                 SELECT id, name, operator, city, address, lat, lon, is_verified
                 FROM stations
                 WHERE is_active = TRUE
-                  AND (name ILIKE $1 OR operator ILIKE $1 OR city ILIKE $1)
+                  AND (name ILIKE $1 OR operator ILIKE $1
+                       OR city ILIKE $1 OR address ILIKE $1)
                 ORDER BY
-                    CASE WHEN name ILIKE $1 THEN 0 ELSE 1 END,
+                    CASE WHEN name ILIKE $1 THEN 0
+                         WHEN operator ILIKE $1 THEN 1
+                         WHEN address ILIKE $1 THEN 2
+                         ELSE 3 END,
                     operator NULLS LAST,
                     name
                 LIMIT $2

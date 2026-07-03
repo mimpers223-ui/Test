@@ -636,7 +636,7 @@ async def handle_search(request):
     max_radius = 100 if is_premium_user else 30
     max_limit = 500 if is_premium_user else 100
 
-    stations = await find_stations_by_name(query, limit=30)
+    stations = await find_stations_by_name(query, limit=50)
 
     station_ids = [s["id"] for s in stations]
     statuses_by_station = await _bulk_get_statuses(station_ids)
