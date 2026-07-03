@@ -1855,3 +1855,45 @@ body.tg-light {
 body.tg-light .bottom-nav {
   background: rgba(255, 255, 255, 0.85);
 }
+
+/* ==== VK light theme (bright_light scheme) ==== */
+body.vk-light {
+  --bg: #ffffff;
+  --bg-elev: #ebedf0;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f1f3;
+  --bg-input: #f0f1f3;
+  --border: #e5e7eb;
+  --border-light: #d1d5db;
+  --text: #000000;
+  --text-secondary: #4b5563;
+  --text-muted: #818c99;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.15);
+  --gradient-card: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
+}
+
+body.vk-light .bottom-nav {
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid var(--border);
+}
+
+body.vk-light .map-station-icon.status-unknown {
+  background: linear-gradient(135deg, #a0a4ad, #767a82);
+}
+
+/* ==== VK dark theme (vkontakte_dark) ==== */
+body.vk-dark {
+  --bg: #19191a;
+  --bg-elev: #232324;
+  --bg-card: #2a2a2c;
+  --bg-card-hover: #353537;
+  --bg-input: #353537;
+  --border: #3a3a3c;
+  --text: #e1e3e6;
+  --text-secondary: #b0b3b8;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.6);
+}

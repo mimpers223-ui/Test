@@ -36,6 +36,23 @@ def _link_button(label: str, link: str) -> dict:
     }
 
 
+def _vkapp_button(label: str, app_id: int, hash: str = "", owner_id: int = 0) -> dict:
+    """Кнопка VK Mini App (открывает приложение)."""
+    # VK Mini App URL: vk.com/app{app_id}#{hash}
+    link = f"https://vk.com/app{app_id}"
+    if hash:
+        link += f"#{hash}"
+    return {
+        "action": {
+            "type": "open_app",
+            "label": label,
+            "app_id": app_id,
+            "owner_id": owner_id,
+            "hash": hash,
+        },
+    }
+
+
 def _location_button() -> dict:
     """Кнопка отправки геолокации."""
     return {
@@ -69,11 +86,21 @@ VK_BTN_HOME = "🏠 В начало"
 
 def vk_main_menu() -> str:
     """Главное меню VK."""
-    return vk_keyboard([
+    rows = [
         [_button(VK_BTN_FIND, "primary"), _button(VK_BTN_REPORT, "positive")],
-        [_button(VK_BTN_SUBSCRIBE), _button(VK_BTN_OWNER)],
-        [_button(VK_BTN_PROFILE), _button(VK_BTN_HELP)],
+    ]
+    # Добавляем кнопку Mini App если задан VK_MINI_APP_ID
+    import os
+    app_id = os.getenv("VK_MINI_APP_ID", "")
+    if app_id and app_id.isdigit():
+        rows.append([_vkapp_button("📱 Открыть приложение", int(app_id))])
+    rows.append([
+        _button(VK_BTN_SUBSCRIBE), _button(VK_BTN_OWNER),
     ])
+    rows.append([
+        _button(VK_BTN_PROFILE), _button(VK_BTN_HELP),
+    ])
+    return vk_keyboard(rows)
 
 
 def vk_city_keyboard() -> str:

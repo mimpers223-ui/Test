@@ -9,6 +9,7 @@
   const platform = {
     tg: !!(window.Telegram && window.Telegram.WebApp),
     vk: false, // determined async via VK Bridge
+    scheme: 'dark', // color scheme: dark / light / vkontakte_dark / bright_light
   };
 
   const tg = platform.tg ? window.Telegram.WebApp : null;
@@ -21,19 +22,51 @@
     }
   }
 
-  // VK Bridge detection
+  // VK Bridge detection + init
   const vkBridgePromise = (async () => {
-    if (window.vkBridge) {
+    if (!window.vkBridge) return false;
+    try {
+      // Send init first
+      await window.vkBridge.send('VKWebAppInit', {});
+      // Get launch params (scheme, viewport, etc.)
       try {
-        await window.vkBridge.send('VKWebAppInit', {});
-        platform.vk = true;
-        return true;
+        const launchParams = await window.vkBridge.send('VKWebAppGetLaunchParams', {});
+        if (launchParams?.scheme) {
+          platform.scheme = launchParams.scheme;
+        }
+        if (launchParams?.vk_user_id) {
+          state.vkUserId = launchParams.vk_user_id;
+        }
+        // Store launch params for analytics
+        state.vkLaunchParams = launchParams;
       } catch (e) {
-        return false;
+        // Fallback: try get color scheme
+        try {
+          const colorScheme = await window.vkBridge.send('VKWebAppGetColorScheme', {});
+          if (colorScheme === 'bright_light') platform.scheme = 'light';
+          else if (colorScheme) platform.scheme = colorScheme;
+        } catch (e2) {
+          // ignore
+        }
       }
+      platform.vk = true;
+      applyTheme();
+      return true;
+    } catch (e) {
+      console.warn('VK Bridge init failed:', e);
+      return false;
     }
-    return false;
   })();
+
+  function applyTheme() {
+    if (platform.scheme === 'bright_light' || platform.scheme === 'light') {
+      document.body.classList.add('vk-light');
+      document.body.classList.remove('vk-dark');
+    } else {
+      document.body.classList.add('vk-dark');
+      document.body.classList.remove('vk-light');
+    }
+  }
 
   // ============= API =============
   const API = (() => {
@@ -46,6 +79,17 @@
     const url = `${API}${path}`;
     const headers = { 'Content-Type': 'application/json' };
     if (tg?.initData) headers['X-Telegram-Init-Data'] = tg.initData;
+    // VK init data для backend auth (если доступен)
+    if (platform.vk && state.vkLaunchParams) {
+      try {
+        const params = new URLSearchParams();
+        for (const [k, v] of Object.entries(state.vkLaunchParams)) {
+          if (typeof v !== 'object') params.set(k, String(v));
+        }
+        headers['X-VK-Init-Data'] = params.toString();
+        if (state.vkUserId) headers['X-VK-User-Id'] = String(state.vkUserId);
+      } catch (e) { /* ignore */ }
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
     try {
@@ -76,6 +120,9 @@
     stations: [],
     userLocation: null, // { lat, lon }
     selectedStation: null,
+    vkUserId: null,        // VK user ID
+    vkLaunchParams: null,  // VK launch params
+    tgUser: null,          // TG user info
     reportSheet: {
       stationId: null,
       stationName: '',
@@ -187,9 +234,8 @@
 
   function getTgId() {
     if (tg?.initDataUnsafe?.user?.id) return tg.initDataUnsafe.user.id;
-    // VK uses peer_id
-    if (platform.vk && window.vkBridge) {
-      // Sync return: VK id is fetched async separately
+    // VK uses vk_user_id from launch params
+    if (platform.vk) {
       return state.vkUserId;
     }
     return null;
@@ -199,12 +245,58 @@
   function haptic(style) {
     if (tg?.HapticFeedback) {
       try { tg.HapticFeedback.impactOccurred(style || 'light'); } catch (e) {}
+    } else if (platform.vk && window.vkBridge) {
+      try { window.vkBridge.send('VKWebAppTapticImpactOccurred', { style: style || 'light' }); } catch (e) {}
     }
   }
 
   function hapticNotify(type) {
     if (tg?.HapticFeedback) {
       try { tg.HapticFeedback.notificationOccurred(type || 'success'); } catch (e) {}
+    } else if (platform.vk && window.vkBridge) {
+      try { window.vkBridge.send('VKWebAppTapticNotificationOccurred', { type: type || 'success' }); } catch (e) {}
+    }
+  }
+
+  // ============= VK BRIDGE HELPERS =============
+  function vkSend(method, params = {}) {
+    if (!platform.vk || !window.vkBridge) return Promise.resolve(null);
+    return window.vkBridge.send(method, params).catch(e => {
+      console.warn('VK Bridge', method, 'failed:', e);
+      return null;
+    });
+  }
+
+  function closeApp() {
+    if (tg?.close) {
+      try { tg.close(); } catch (e) {}
+    } else if (platform.vk) {
+      vkSend('VKWebAppClose', { status: 'success' });
+    }
+  }
+
+  function expandApp() {
+    if (tg?.expand) {
+      try { tg.expand(); } catch (e) {}
+    } else if (platform.vk) {
+      vkSend('VKWebAppExpand', {});
+    }
+  }
+
+  function onBackButton(handler) {
+    if (tg?.BackButton) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(handler);
+    } else if (platform.vk) {
+      // VK doesn't have a built-in back button, but we can listen to history
+      // or use a custom button. For now, no-op.
+    }
+  }
+
+  function offBackButton() {
+    if (tg?.BackButton) {
+      tg.BackButton.hide();
+      tg.BackButton.offClick();
     }
   }
 

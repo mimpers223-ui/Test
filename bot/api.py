@@ -362,13 +362,24 @@ async def handle_stations(request):
     if err:
         return err
 
-    # === Premium detection по telegram_id ===
+    # === Premium detection по telegram_id / vk_user_id ===
     telegram_id_raw = request.query.get("telegram_id")
+    vk_user_id_raw = request.headers.get("X-VK-User-Id") or request.query.get("vk_user_id")
     is_premium_user = False
     if telegram_id_raw:
         try:
             tid = int(telegram_id_raw)
             uid = await get_user_id_by_telegram_id(tid)
+            if uid:
+                from db import is_premium
+                is_premium_user = await is_premium(uid)
+        except (ValueError, TypeError):
+            pass
+    elif vk_user_id_raw:
+        # VK: ищем пользователя по vk_user_id (хранится в telegram_id поле как соглашение)
+        try:
+            vuid = int(vk_user_id_raw)
+            uid = await get_user_id_by_telegram_id(vuid)
             if uid:
                 from db import is_premium
                 is_premium_user = await is_premium(uid)
@@ -478,13 +489,22 @@ async def handle_stations_by_city(request):
     except ValueError:
         limit = default_limit
 
-    # === Premium detection ===
+    # === Premium detection (TG + VK) ===
     telegram_id_raw = request.query.get("telegram_id")
+    vk_user_id_raw = request.headers.get("X-VK-User-Id") or request.query.get("vk_user_id")
     is_premium_user = False
     if telegram_id_raw:
         try:
             tid = int(telegram_id_raw)
             uid = await get_user_id_by_telegram_id(tid)
+            if uid:
+                is_premium_user = await is_premium(uid)
+        except (ValueError, TypeError):
+            pass
+    elif vk_user_id_raw:
+        try:
+            vuid = int(vk_user_id_raw)
+            uid = await get_user_id_by_telegram_id(vuid)
             if uid:
                 is_premium_user = await is_premium(uid)
         except (ValueError, TypeError):
@@ -651,11 +671,20 @@ async def handle_search(request):
 
     # === Premium detection (как в handle_stations) ===
     telegram_id_raw = request.query.get("telegram_id")
+    vk_user_id_raw = request.headers.get("X-VK-User-Id") or request.query.get("vk_user_id")
     is_premium_user = False
     if telegram_id_raw:
         try:
             tid = int(telegram_id_raw)
             uid = await get_user_id_by_telegram_id(tid)
+            if uid:
+                is_premium_user = await is_premium(uid)
+        except (ValueError, TypeError):
+            pass
+    elif vk_user_id_raw:
+        try:
+            vuid = int(vk_user_id_raw)
+            uid = await get_user_id_by_telegram_id(vuid)
             if uid:
                 is_premium_user = await is_premium(uid)
         except (ValueError, TypeError):
