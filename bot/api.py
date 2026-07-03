@@ -123,6 +123,28 @@ def _serialize_status(s: dict) -> dict:
     return out
 
 
+def _dedupe_statuses_per_fuel(statuses: list) -> list:
+    """Оставляет только один (лучший) статус на каждый fuel_type.
+
+    Входной список уже отсортирован по приоритету: user → confidence DESC → created_at DESC.
+    Берём первый (лучший) отчёт для каждого типа топлива.
+    Если у топлива несколько разных цен от разных источников — показываем в комментарии.
+    """
+    if not statuses:
+        return []
+    seen = set()
+    out = []
+    for s in statuses:
+        ft = s.get("fuel_type")
+        if not ft or ft == "all":
+            continue
+        if ft in seen:
+            continue
+        seen.add(ft)
+        out.append(s)
+    return out
+
+
 def _parse_float(request, name: str, min_val: float, max_val: float) -> tuple[float | None, web.Response | None]:
     """Парсит float query param с валидацией диапазона."""
     try:
@@ -396,7 +418,7 @@ async def handle_stations(request):
             "lon": s.get("lon"),
             "distance_km": s.get("distance_km"),
             "is_verified": bool(s.get("is_verified")),
-            "statuses": [_serialize_status(st) for st in statuses],
+            "statuses": [_serialize_status(st) for st in _dedupe_statuses_per_fuel(statuses)],
             "has_data": len(statuses) > 0,
         })
 
@@ -512,7 +534,7 @@ async def handle_stations_by_city(request):
             "lat": s.get("lat"),
             "lon": s.get("lon"),
             "is_verified": bool(s.get("is_verified")),
-            "statuses": [_serialize_status(st) for st in statuses],
+            "statuses": [_serialize_status(st) for st in _dedupe_statuses_per_fuel(statuses)],
             "has_data": len(statuses) > 0,
         })
 
@@ -659,7 +681,7 @@ async def handle_search(request):
             "lat": s.get("lat"),
             "lon": s.get("lon"),
             "is_verified": bool(s.get("is_verified")),
-            "statuses": [_serialize_status(st) for st in statuses],
+            "statuses": [_serialize_status(st) for st in _dedupe_statuses_per_fuel(statuses)],
             "has_data": len(statuses) > 0,
         })
 
@@ -740,7 +762,7 @@ async def handle_station_detail(request):
     statuses = await get_station_current_status(station_id)
     return web.json_response({
         "station": _serialize_station(station),
-        "statuses": [_serialize_status(st) for st in statuses],
+        "statuses": [_serialize_status(st) for st in _dedupe_statuses_per_fuel(statuses)],
     })
 
 
