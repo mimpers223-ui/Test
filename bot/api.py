@@ -1270,7 +1270,7 @@ async def _on_cleanup(app: web.Application) -> None:
 
 
 async def handle_enrich(request):
-    """GET /api/enrich?key=... — обогащение адресов через Nominatim."""
+    """GET /api/enrich?key=... — обогащение адресов через Nominatim (в фоне)."""
     parse_key = os.environ.get("PARSE_API_KEY", "")
     provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
     if not parse_key or not provided_key or provided_key != parse_key:
@@ -1288,12 +1288,12 @@ async def handle_enrich(request):
             import enrich_addresses
             sys.argv = ["enrich_addresses.py", "--limit", "200", "--provider", "photon"]
             await enrich_addresses.main()
-            return "ok"
+            logger.info("[enrich] Done")
         except Exception as e:
-            return str(e)
+            logger.warning("[enrich] Failed: %s", e)
 
-    result = await asyncio.create_task(_run_enrich())
-    return web.json_response({"ok": True, "enrich": result})
+    asyncio.create_task(_run_enrich())
+    return web.json_response({"ok": True, "message": "enrich started in background"})
 
 
 def create_app() -> web.Application:
