@@ -138,7 +138,12 @@ async def _vk_send(peer_id: int, text: str, keyboard: str | None = None) -> dict
     }
     if keyboard:
         params["keyboard"] = keyboard
-    return await _vk_api_call("messages.send", params)
+    result = await _vk_api_call("messages.send", params)
+    if "error" in result:
+        logger.warning("VK messages.send error to peer=%d: %s", peer_id, result.get("error"))
+    else:
+        logger.info("VK messages.send OK to peer=%d (msg_id=%s)", peer_id, result.get("response"))
+    return result
 
 
 async def _vk_send_event_answer(event_id: str, user_id: int, peer_id: int,
