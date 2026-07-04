@@ -649,6 +649,10 @@ async def process_message_new(event: dict) -> None:
 async def process_message_event(event: dict) -> None:
     """Обрабатывает message_event (нажатие inline-кнопки)."""
     obj = event.get("object", {})
+
+    # ДИАГНОСТИКА: логируем весь object чтобы понять структуру
+    logger.info("VK msg_event raw object: %s", json.dumps(obj, ensure_ascii=False)[:500])
+
     peer_id = obj.get("peer_id", 0)
     user_id = obj.get("user_id", 0)
     event_id = obj.get("event_id", "")
@@ -656,6 +660,7 @@ async def process_message_event(event: dict) -> None:
     conversation_msg_id = obj.get("conversation_message_id", 0)
 
     if not peer_id or not event_id:
+        logger.warning("VK msg_event: missing peer_id or event_id. obj=%s", obj)
         return
 
     # Дедупликация по event_id
@@ -668,11 +673,16 @@ async def process_message_event(event: dict) -> None:
         if not k.startswith("msg:") and now - _processed_events[k] > _EVENT_DEDUP_TTL * 2:
             _processed_events.pop(k, None)
 
-    try:
-        payload = json.loads(payload_str) if payload_str else {}
-    except (json.JSONDecodeError, TypeError):
-        payload = {}
-
+    # Парсим payload (может быть строкой или dict)
+    payload = {}
+    if isinstance(payload_str, dict):
+        payload = payload_str
+    elif isinstance(payload_str, str) and payload_str:
+        try:
+            payload = json.loads(payload_str)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning("VK msg_event: failed to parse payload=%r: %s", payload_str, e)
+            payload = {}
     action = payload.get("a", "")
     logger.info("[vk-cb-evt] peer=%d action=%r payload=%r", peer_id, action, payload)
 

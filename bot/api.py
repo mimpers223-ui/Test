@@ -1614,6 +1614,38 @@ def create_app() -> web.Application:
     app.router.add_get("/api/parse", handle_parse)
     app.router.add_get("/api/parse-benzin", handle_parse_benzin)
     app.router.add_post("/api/vk/callback", handle_vk_callback)
+    app.router.add_post("/api/vk/test-event", handle_vk_test_event)
+
+
+async def handle_vk_test_event(request):
+    """POST /api/vk/test-event — ручной тест callback-кнопки (для отладки)."""
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    # Симулируем message_event
+    test_event = {
+        "type": "message_event",
+        "object": {
+            "event_id": f"test_{int(time.time()*1000)}",
+            "user_id": int(body.get("peer_id", 0)),
+            "peer_id": int(body.get("peer_id", 0)),
+            "payload": body.get("payload", {"a": "find"}),
+            "conversation_message_id": 0,
+        }
+    }
+    try:
+        from vk_callback import process_message_event
+        await process_message_event(test_event)
+        return web.json_response({"ok": True, "test_event": test_event})
+    except Exception as e:
+        import traceback
+        return web.json_response({"ok": False, "error": str(e), "traceback": traceback.format_exc()}, status=500)
     app.router.add_get("/api/enrich", handle_enrich)
     app.router.add_get("/api/import-osm", handle_import_osm)
     # Mini App static files
