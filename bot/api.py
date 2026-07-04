@@ -1565,7 +1565,7 @@ async def cors_middleware(app, handler):
             try:
                 if int(content_length) > MAX_REQUEST_BODY:
                     return web.json_response({"error": "request too large"}, status=413)
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
         if request.method == "OPTIONS":
@@ -1575,24 +1575,28 @@ async def cors_middleware(app, handler):
                 "Access-Control-Allow-Headers": "Content-Type, X-Parse-Key",
                 "Access-Control-Max-Age": "86400",
             })
-        response = await handler(request)
+        try:
+            response = await handler(request)
+        except Exception:
+            raise
         response.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGINS
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
-        # CSP для Mini App (только для HTML файлов)
-        ct = response.content_type or ""
-        if "html" in ct:
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://unpkg.com; "
-                "style-src 'self' 'unsafe-inline' https://unpkg.com; "
-                "img-src 'self' data: https:; "
-                "connect-src 'self' https://*.vk.com https://*.telegram.org; "
-                "frame-ancestors 'none'"
-            )
+        # CSP только для HTML (Mini App)
+        try:
+            ct = response.content_type or ""
+            if "html" in ct:
+                response.headers["Content-Security-Policy"] = (
+                    "default-src 'self'; "
+                    "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+                    "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+                    "img-src 'self' data: https:; "
+                    "connect-src 'self' https://*.vk.com https://*.telegram.org; "
+                    "frame-ancestors 'none'"
+                )
+        except Exception:
+            pass
         return response
     return middleware
 
@@ -1702,37 +1706,27 @@ async def handle_import_osm(request):
 
 
 def create_app() -> web.Application:
-    # Audit middleware: логирует все POST запросы и отслеживает подозрительную активность
     @web.middleware
     async def audit_middleware(request, handler):
         ip = request.remote or "?"
         method = request.method
         path = request.path
 
-        # Логируем все POST запросы
         if method == "POST":
             security_logger.info("POST %s from %s", path, ip)
 
-        # Проверяем подозрительные паттерны
-        suspicious_reasons = []
-        if "script" in path.lower() or "exec" in path.lower() or "eval" in path.lower():
-            suspicious_reasons.append("path_injection")
-        if "../" in path or "..%2f" in path.lower():
-            suspicious_reasons.append("path_traversal")
+        suspicious = False
+        lower_path = path.lower()
+        if "script" in lower_path or "exec" in lower_path or "eval" in lower_path:
+            suspicious = True
+        if "../" in path or "%2e%2e" in lower_path:
+            suspicious = True
 
-        if suspicious_reasons:
-            _track_suspicious(ip, ",".join(suspicious_reasons))
-            security_logger.error("SUSPICIOUS: %s %s from %s reasons=%s", method, path, ip, suspicious_reasons)
+        if suspicious:
+            security_logger.error("BLOCKED: %s %s from %s", method, path, ip)
             return web.json_response({"error": "forbidden"}, status=403)
 
-        try:
-            response = await handler(request)
-            return response
-        except web.HTTPException:
-            raise
-        except Exception as e:
-            security_logger.exception("Unhandled error: %s %s from %s", method, path, ip)
-            raise
+        return await handler(request)
 
     app = web.Application(middlewares=[audit_middleware, cors_middleware])
     app.on_startup.append(_on_startup)
