@@ -1615,6 +1615,23 @@ def create_app() -> web.Application:
     app.router.add_get("/api/parse-benzin", handle_parse_benzin)
     app.router.add_post("/api/vk/callback", handle_vk_callback)
     app.router.add_post("/api/vk/test-event", handle_vk_test_event)
+    app.router.add_get("/api/enrich", handle_enrich)
+    app.router.add_get("/api/import-osm", handle_import_osm)
+    # Mini App static files
+    miniapp_dir = Path(__file__).parent.parent / "miniapp"
+    if miniapp_dir.exists():
+        async def serve_index(request):
+            response = web.FileResponse(miniapp_dir / "index.html")
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+        # Serve static files under /app/ prefix (avoids conflicts with /miniapp/ route)
+        app.router.add_static("/app/", miniapp_dir, append_version=False)
+        # Routes
+        for path in ("/miniapp", "/miniapp/", "/m", "/m/", "/v2", "/v2/"):
+            app.router.add_get(path, serve_index)
+    return app
 
 
 async def handle_vk_test_event(request):
@@ -1646,20 +1663,3 @@ async def handle_vk_test_event(request):
     except Exception as e:
         import traceback
         return web.json_response({"ok": False, "error": str(e), "traceback": traceback.format_exc()}, status=500)
-    app.router.add_get("/api/enrich", handle_enrich)
-    app.router.add_get("/api/import-osm", handle_import_osm)
-    # Mini App static files
-    miniapp_dir = Path(__file__).parent.parent / "miniapp"
-    if miniapp_dir.exists():
-        async def serve_index(request):
-            response = web.FileResponse(miniapp_dir / "index.html")
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            return response
-        # Serve static files under /app/ prefix (avoids conflicts with /miniapp/ route)
-        app.router.add_static("/app/", miniapp_dir, append_version=False)
-        # Routes
-        for path in ("/miniapp", "/miniapp/", "/m", "/m/", "/v2", "/v2/"):
-            app.router.add_get(path, serve_index)
-    return app
