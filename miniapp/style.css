@@ -491,6 +491,42 @@ img { max-width: 100%; display: block; }
   color: #fff;
   border-color: var(--accent);
 }
+
+/* Route choice sheet */
+.route-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.route-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.route-option:active {
+  transform: scale(0.98);
+  background: var(--accent);
+  color: #fff;
+}
+
+.route-icon {
+  font-size: 20px;
+}
+
+.route-name {
+  flex: 1;
+}
   background: var(--bg-card);
   color: var(--text-secondary);
   font-size: 13px;

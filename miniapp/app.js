@@ -756,14 +756,53 @@
       showToast('Координаты не указаны', 'warning');
       return;
     }
-    // Open in external map app
-    const yandex = `yandexmaps://maps.yandex.ru/?pt=${lon},${lat}&z=15`;
-    const gmaps = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-    if (tg?.openLink) {
-      tg.openLink(gmaps);
-    } else {
-      window.open(gmaps, '_blank');
-    }
+    // Show route choice sheet
+    const existing = document.getElementById('route-sheet');
+    if (existing) existing.remove();
+
+    const yandexUrl = `yandexmaps://maps.yandex.ru/?pt=${lon},${lat}&z=15`;
+    const yandexWeb = `https://yandex.ru/maps/?pt=${lon},${lat}&z=15`;
+    const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+    const gis2Url = `https://2gis.ru/geo/${lon}/${lat}`;
+
+    const sheet = document.createElement('div');
+    sheet.id = 'route-sheet';
+    sheet.className = 'price-filter-sheet';
+    sheet.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">🗺️ Построить маршрут</span>
+        <button class="sheet-close" id="route-close">✕</button>
+      </div>
+      <div class="route-options">
+        <button class="route-option" data-url="${yandexUrl}" data-web="${yandexWeb}">
+          <span class="route-icon">🟦</span>
+          <span class="route-name">Яндекс Карты</span>
+        </button>
+        <button class="route-option" data-url="${gmapsUrl}">
+          <span class="route-icon">🟥</span>
+          <span class="route-name">Google Карты</span>
+        </button>
+        <button class="route-option" data-url="${gis2Url}">
+          <span class="route-icon">🟩</span>
+          <span class="route-name">2ГИС</span>
+        </button>
+      </div>
+    `;
+    document.querySelector('.screen-station').appendChild(sheet);
+
+    sheet.querySelector('#route-close').addEventListener('click', () => sheet.remove());
+    sheet.querySelectorAll('.route-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const url = btn.dataset.url;
+        const web = btn.dataset.web;
+        if (tg?.openLink) {
+          tg.openLink(url).catch(() => { if (web) tg.openLink(web); });
+        } else {
+          window.open(url, '_blank');
+        }
+        sheet.remove();
+      });
+    });
   }
 
   // ============= REPORT FLOW =============

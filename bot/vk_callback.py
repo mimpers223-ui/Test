@@ -75,7 +75,7 @@ def format_for_vk(text: str) -> str:
 
     Правила:
       <b>text</b>  → **text**
-      <i>text</i>  → *text*
+      <i>text</i>  → [text]  (italic не поддерживается стабильно, убираем)
       <br>         → \\n (новая строка)
       <code>text</code> → `text`
       прочие теги  → удаляются
@@ -88,9 +88,9 @@ def format_for_vk(text: str) -> str:
     text = re.sub(r'</?p\s*/?>', '\n', text, flags=re.IGNORECASE)
     # Bold: <b>text</b> → **text**
     text = re.sub(r'<b>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE | re.DOTALL)
-    # Italic: <i>text</i> → *text*
-    text = re.sub(r'<i>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE | re.DOTALL)
-    # Underline, strikethrough — без аналога в VK markdown, оставляем как plain
+    # Italic: <i>text</i> → просто текст (VK markdown *italic* нестабилен)
+    text = re.sub(r'<i>(.*?)</i>', r'\1', text, flags=re.IGNORECASE | re.DOTALL)
+    # Underline, strikethrough — убираем теги
     text = re.sub(r'</?u\s*/?>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'</?s\s*/?>', '', text, flags=re.IGNORECASE)
     # Code: <code>text</code> → `text`
@@ -379,28 +379,28 @@ async def handle_text_search(
     fuel: str = "all",
     max_price: float | None = None,
     network: str | None = None,
+    page: int = 0,
 ) -> None:
     if not query or len(query) < 2:
         await _vk_send(peer_id, "Введи минимум 2 символа.", vk_main_menu())
         return
 
     fuel_param = None if fuel in ("all", "", None) else fuel
+    PAGE_SIZE = 5
 
     # 1) Сначала пробуем как город
     stations = await find_stations_by_city(
         city=query,
         has_stock=False,
-        limit=20,
+        limit=50,
         fuel_type=fuel_param,
         max_price=max_price,
         network=network,
     )
     if not stations:
-        # 2) Как название/сеть
-        stations = await find_stations_by_name(query, limit=20)
+        stations = await find_stations_by_name(query, limit=50)
     if not stations:
-        # 3) Как адрес
-        stations = await find_stations_by_address(query, limit=20)
+        stations = await find_stations_by_address(query, limit=50)
 
     if not stations:
         filter_desc = []
@@ -412,7 +412,6 @@ async def handle_text_search(
             filter_desc.append(f"до {max_price}₽")
         if network:
             filter_desc.append(f"сеть: {network}")
-
         await _vk_send(peer_id,
             f"😔 В городе «{query}» ничего не найдено.\n"
             + (f"Фильтры: {', '.join(filter_desc)}\n\n" if filter_desc else "\n")
@@ -421,7 +420,57 @@ async def handle_text_search(
         )
         return
 
-    # Показываем список (до 5)
+    # Сортировка: получаем статусы и сортируем по наличию топлива
+    scored = []
+    for s in stations:
+        sid = s.get("id")
+        try:
+            statuses = await get_station_current_status(sid)
+        except Exception:
+            statuses = []
+        # Подсчёт: есть ли данные
+        has_any_fuel = False
+        has_low = False
+        fuel_count = 0
+        fuel_parts = []
+        for st in statuses:
+            ft = st.get("fuel_type", "")
+            av = st.get("available")
+            price = st.get("price")
+            if av is True:
+                has_any_fuel = True
+                fuel_count += 1
+                fuel_parts.append(ft)
+            elif av is None:  # "кончается"
+                has_low = True
+                fuel_parts.append(f"{ft}⚠")
+            elif av is False:
+                fuel_parts.append(f"{ft}❌")
+
+        # Оценка: 3=есть топливо, 2=заканчивается, 1=нет топлива, 0=нет данных
+        if has_any_fuel:
+            score = 300 + fuel_count * 10  # больше видов = выше
+        elif has_low:
+            score = 200
+        elif statuses:
+            score = 100
+        else:
+            score = 0
+
+        s["_score"] = score
+        s["_fuel_parts"] = fuel_parts
+        s["_statuses"] = statuses
+        scored.append(s)
+
+    scored.sort(key=lambda x: x["_score"], reverse=True)
+
+    # Пагинация
+    total = len(scored)
+    total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+    page = max(0, min(page, total_pages - 1))
+    page_stations = scored[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+
+    # Формируем сообщение
     fuel_label = {
         "92": "АИ-92", "95": "АИ-95", "98": "АИ-98",
         "100": "АИ-100", "diesel": "Дизель", "lpg": "Газ"
@@ -435,19 +484,53 @@ async def handle_text_search(
         filter_parts.append(network)
     filter_text = f" · {'/'.join(filter_parts)}" if filter_parts else ""
 
-    lines = [f"🗺 <b>{query}</b>{filter_text} — найдено {len(stations)} АЗС\n"]
+    lines = [f"🗺 <b>{query}</b>{filter_text} — {total} АЗС (стр. {page+1}/{total_pages})\n"]
     buttons = []
-    for i, s in enumerate(stations[:5]):
+    for i, s in enumerate(page_stations):
+        idx = page * PAGE_SIZE + i + 1
         op = s.get("operator") or s.get("name") or "АЗС"
         addr = s.get("address") or ""
-        lines.append(f"\n{i+1}. {op}")
+        fuel_parts = s.get("_fuel_parts", [])
+
+        # Статус-индикатор
+        score = s.get("_score", 0)
+        if score >= 300:
+            indicator = "✅"
+        elif score >= 200:
+            indicator = "⚠️"
+        elif score >= 100:
+            indicator = "❌"
+        else:
+            indicator = "❓"
+
+        fuel_str = ", ".join(fuel_parts[:4]) if fuel_parts else "нет данных"
+        lines.append(f"\n{indicator} {idx}. <b>{op}</b>")
         if addr:
-            lines.append(f"   📍 {addr[:50]}")
+            lines.append(f"📍 {addr[:50]}")
+        lines.append(f"⛽ {fuel_str}")
+
         buttons.append([_callback_button(
-            f"📍 {i+1}. {op[:25]}",
+            f"{indicator} {idx}. {op[:22]}",
             {"a": "station", "s": s.get("id")},
             "primary"
         )])
+
+    # Навигация
+    nav_row = []
+    if page > 0:
+        nav_row.append(_callback_button(
+            "◀️ Назад",
+            {"a": "city_page", "c": query, "p": page - 1, "f": fuel or "", "mp": max_price or 0, "n": network or ""},
+            "secondary"
+        ))
+    if page < total_pages - 1:
+        nav_row.append(_callback_button(
+            "Вперёд ▶️",
+            {"a": "city_page", "c": query, "p": page + 1, "f": fuel or "", "mp": max_price or 0, "n": network or ""},
+            "secondary"
+        ))
+    if nav_row:
+        buttons.append(nav_row)
 
     buttons.append([
         _callback_button("◀️ К фильтрам", {"a": "city", "c": query}, "secondary"),
@@ -919,6 +1002,15 @@ async def process_message_event(event: dict) -> None:
         if city:
             _set_state(peer_id, {"flow": "search", "city": city})
             await handle_text_search(peer_id, city, fuel=None)
+
+    elif action == "city_page":
+        city = payload.get("c", "")
+        page = payload.get("p", 0)
+        fuel = payload.get("f", "all")
+        max_price = payload.get("mp", 0) or None
+        network = payload.get("n", "") or None
+        if city:
+            await handle_text_search(peer_id, city, fuel=fuel, max_price=max_price, network=network, page=page)
 
     elif action == "city_input":
         _set_state(peer_id, {"awaiting": "city_input"})

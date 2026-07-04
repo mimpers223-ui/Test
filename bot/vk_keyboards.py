@@ -297,12 +297,12 @@ def vk_price_filter_keyboard(city: str, fuel: str | None = None) -> str:
     suffix = f" (АИ-{fuel})" if fuel else ""
     return vk_keyboard([
         [
-            _callback_button("💰 До 40₽", {"a": "city_price_set", "c": city, "p": 40, "f": fuel or ""}, "primary"),
-            _callback_button("💰 До 45₽", {"a": "city_price_set", "c": city, "p": 45, "f": fuel or ""}, "primary"),
+            _callback_button("💰 До 70₽", {"a": "city_price_set", "c": city, "p": 70, "f": fuel or ""}, "primary"),
+            _callback_button("💰 До 80₽", {"a": "city_price_set", "c": city, "p": 80, "f": fuel or ""}, "primary"),
         ],
         [
-            _callback_button("💰 До 50₽", {"a": "city_price_set", "c": city, "p": 50, "f": fuel or ""}, "secondary"),
-            _callback_button("💰 До 55₽", {"a": "city_price_set", "c": city, "p": 55, "f": fuel or ""}, "secondary"),
+            _callback_button("💰 До 90₽", {"a": "city_price_set", "c": city, "p": 90, "f": fuel or ""}, "secondary"),
+            _callback_button("💰 До 100₽", {"a": "city_price_set", "c": city, "p": 100, "f": fuel or ""}, "secondary"),
         ],
         [
             _callback_button("📋 Любая цена", {"a": "city_price_set", "c": city, "p": 0, "f": fuel or ""}, "primary"),
