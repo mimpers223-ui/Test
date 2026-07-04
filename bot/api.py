@@ -1607,29 +1607,20 @@ async def _on_startup(app: web.Application) -> None:
     if _db_mod._db is None:
         await db.init_db()
 
-    # === Security: проверка критических переменных окружения ===
+    # Security: проверка критических переменных окружения
     bot_token = os.getenv("BOT_TOKEN", "")
     if not bot_token or bot_token == "YOUR_BOT_TOKEN_HERE":
-        security_logger.critical("BOT_TOKEN is missing or placeholder! Bot will not work.")
-    elif len(bot_token) < 30:
-        security_logger.warning("BOT_TOKEN looks suspiciously short (%d chars)", len(bot_token))
+        security_logger.critical("BOT_TOKEN is missing or placeholder!")
 
     parse_key = os.getenv("PARSE_API_KEY", "")
     if not parse_key:
-        security_logger.warning("PARSE_API_KEY not set — admin endpoints unprotected")
+        security_logger.warning("PARSE_API_KEY not set")
 
     vk_secret = os.getenv("VK_CALLBACK_SECRET", "")
     if not vk_secret:
-        security_logger.warning("VK_CALLBACK_SECRET not set — VK callback unprotected")
+        security_logger.warning("VK_CALLBACK_SECRET not set")
 
-    # Проверка что .env.example не содержит реальных токенов
-    env_example = Path(__file__).parent.parent / ".env.example"
-    if env_example.exists():
-        content = env_example.read_text()
-        if re.search(r'\d{10}:[A-Za-z0-9_-]{35}', content):
-            security_logger.critical(".env.example contains a real BOT_TOKEN! SECURITY RISK!")
-
-    logger.info("API started, DB initialized, security checks passed")
+    logger.info("API started, DB initialized")
 
 
 async def _on_cleanup(app: web.Application) -> None:
