@@ -45,6 +45,7 @@ _rate_limit: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT_GET = 30
 RATE_LIMIT_POST = 10
 RATE_LIMIT_ADMIN = 5  # для admin endpoints
+RATE_LIMIT_PER_MIN = RATE_LIMIT_GET  # legacy alias
 
 # === Request size limits ===
 MAX_REQUEST_BODY = 1024 * 1024  # 1 MB
