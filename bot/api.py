@@ -168,24 +168,30 @@ async def handle_health(request):
 
 
 async def handle_logs(request):
-    """GET /api/logs?lines=50 — последние строки bot.log (для отладки)."""
+    """GET /api/logs?lines=50 — последние строки bot.log (для отладки).
+
+    Требует заголовок X-Parse-Key для авторизации.
+    """
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
     log_path = Path(__file__).parent / "bot.log"
     if not log_path.exists():
         return web.json_response({"error": "no log file"}, status=404)
     try:
         lines = int(request.query.get("lines", "50"))
-        lines = max(1, min(lines, 500))
+        lines = max(1, min(lines, 200))
     except (ValueError, TypeError):
         lines = 50
     try:
-        # Читаем последние N строк
         with open(log_path, "rb") as f:
             content = f.read()
         text = content.decode("utf-8", errors="ignore")
         all_lines = text.splitlines()
         last = all_lines[-lines:] if len(all_lines) > lines else all_lines
         return web.json_response({
-            "path": str(log_path),
             "total_lines": len(all_lines),
             "shown": len(last),
             "lines": last,
@@ -256,13 +262,13 @@ async def handle_reverse_geocode(request):
 async def handle_admin_stats(request):
     """GET /api/admin/stats — статистика всех парсеров (мониторинг).
 
-    Возвращает:
-    - Сколько цен за 1/6/24 часа по источникам
-    - Когда был последний отчёт
-    - Статус каждого парсера (OK / STALE / DEAD)
-    - Сколько АЗС в базе
-    - Сколько АЗС с ценами
+    Требует заголовок X-Parse-Key для авторизации.
     """
+    parse_key = os.environ.get("PARSE_API_KEY", "")
+    provided_key = request.headers.get("X-Parse-Key", "") or request.query.get("key", "")
+    if not parse_key or not provided_key or provided_key != parse_key:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
     # === Статистика по источникам ===
     sources_stats = await get_source_stats()
     total_stations = await db._fetch("SELECT COUNT(*) as c FROM stations", one=True)
@@ -1432,8 +1438,27 @@ async def handle_vk_callback(request):
       - message_new → обработать через vk_callback.process_message_new
       - message_event → обработать inline-кнопку
 
-    Безопасность: проверяет secret, если задан VK_CALLBACK_SECRET.
+    Безопасность:
+      - VK IP whitelist (апдейт VK: 185.195.232.0/22, 77.88.21.0/24, 93.184.216.0/24, 95.142.128.0/24, 87.240.128.0/20, 91.218.228.0/22)
+      - VK_CALLBACK_SECRET (если задан)
     """
+    # === IP whitelist (VK API серверы) ===
+    VK_IP_PREFIXES = (
+        "185.195.232.", "77.88.21.", "93.184.216.", "95.142.128.",
+        "87.240.128.", "91.218.228.", "87.240.13.", "5.45.192.",
+    )
+    remote = request.remote or ""
+    # Разрешаем localhost для health checks и Render proxy
+    is_vk_ip = any(remote.startswith(p) for p in VK_IP_PREFIXES)
+    is_local = remote in ("127.0.0.1", "::1", "10.0.0.0", "")
+    # Render proxy: реальный IP в X-Real-IP
+    x_real = request.headers.get("X-Real-IP", "")
+    is_vk_xreal = any(x_real.startswith(p) for p in VK_IP_PREFIXES)
+
+    if not (is_vk_ip or is_local or is_vk_xreal):
+        logger.warning("VK callback: rejected from non-VK IP %s (X-Real-IP: %s)", remote, x_real)
+        return web.json_response({"error": "forbidden"}, status=403)
+
     try:
         event = await request.json()
     except Exception as e:
@@ -1495,20 +1520,26 @@ ALLOWED_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "")
 if ALLOWED_ORIGINS_RAW:
     ALLOWED_ORIGINS = ALLOWED_ORIGINS_RAW
 else:
-    ALLOWED_ORIGINS = "*"  # dev mode
+    # Default: разрешаем Mini App домены
+    ALLOWED_ORIGINS = "https://benzin-ryadom.onrender.com,https://benzin-ryadom.vercel.app"
 
 
 async def cors_middleware(app, handler):
-    """CORS-заголовки."""
+    """CORS + security headers."""
     async def middleware(request):
         if request.method == "OPTIONS":
             return web.Response(headers={
                 "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
                 "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Headers": "Content-Type, X-Parse-Key",
+                "Access-Control-Max-Age": "86400",
             })
         response = await handler(request)
         response.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGINS
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
     return middleware
 
