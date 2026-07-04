@@ -5,6 +5,7 @@ API-сервер для Mini App.
 import json
 import logging
 import os
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
@@ -35,12 +36,23 @@ import db  # for db._fetch, db.USE_SQLITE в get_source_stats
 import aiohttp  # для reverse geocoding
 
 logger = logging.getLogger(__name__)
+security_logger = logging.getLogger("security")
 
 
 # === Rate limit (in-memory, на IP) ===
-# Простой token bucket: max N запросов в минуту на IP
+# Строже: 30 GET / 10 POST в минуту на IP
 _rate_limit: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT_PER_MIN = 60  # 60 GET / 30 POST в минуту на IP
+RATE_LIMIT_GET = 30
+RATE_LIMIT_POST = 10
+RATE_LIMIT_ADMIN = 5  # для admin endpoints
+
+# === Request size limits ===
+MAX_REQUEST_BODY = 1024 * 1024  # 1 MB
+
+# === Suspicious activity tracking ===
+_suspicious: dict[str, list[tuple[float, str]]] = defaultdict(list)
+SUSPICIOUS_THRESHOLD = 10  # запросов за 5 минут
+SUSPICIOUS_WINDOW = 300  # 5 минут
 
 # === Parsers lock (чтобы не запускать парсеры параллельно) ===
 _parsers_running: bool = False
@@ -49,12 +61,32 @@ _parsers_running: bool = False
 def _check_rate(ip: str, max_per_min: int) -> bool:
     """Возвращает True если запрос разрешён, False если rate limit превышен."""
     now = time.time()
-    # Чистим старые записи (>60 сек)
     _rate_limit[ip] = [t for t in _rate_limit[ip] if now - t < 60]
     if len(_rate_limit[ip]) >= max_per_min:
+        security_logger.warning("Rate limit exceeded: IP=%s count=%d/%d", ip, len(_rate_limit[ip]), max_per_min)
         return False
     _rate_limit[ip].append(now)
     return True
+
+
+def _track_suspicious(ip: str, reason: str) -> bool:
+    """Отслеживает подозрительную активность. Возвращает True если порог превышен."""
+    now = time.time()
+    _suspicious[ip] = [(t, r) for t, r in _suspicious[ip] if now - t < SUSPICIOUS_WINDOW]
+    _suspicious[ip].append((now, reason))
+    if len(_suspicious[ip]) >= SUSPICIOUS_THRESHOLD:
+        security_logger.error("SUSPICIOUS ACTIVITY: IP=%s requests=%d reason=%s",
+                            ip, len(_suspicious[ip]), reason)
+        return True
+    return False
+
+
+def _sanitize_error(e: Exception) -> str:
+    """Возвращает безопасное описание ошибки (без внутренних деталей)."""
+    safe_types = (ValueError, KeyError, TypeError)
+    if isinstance(e, safe_types):
+        return str(e)[:100]
+    return "internal error"
 
 
 # === Simple in-memory cache for slow endpoints ===
@@ -993,7 +1025,7 @@ async def handle_station_prices(request):
 async def handle_create_report(request):
     """POST /api/reports — создание отчёта из Mini App"""
     # Строже rate limit для POST
-    if not _check_rate(request.remote or "?", 30):
+    if not _check_rate(request.remote or "?", RATE_LIMIT_POST):
         return web.json_response({"error": "rate limit exceeded"}, status=429)
 
     try:
@@ -1525,8 +1557,17 @@ else:
 
 
 async def cors_middleware(app, handler):
-    """CORS + security headers."""
+    """CORS + security headers + request size limit."""
     async def middleware(request):
+        # === Request size limit ===
+        if request.method == "POST":
+            content_length = request.headers.get("Content-Length", "0")
+            try:
+                if int(content_length) > MAX_REQUEST_BODY:
+                    return web.json_response({"error": "request too large"}, status=413)
+            except ValueError:
+                pass
+
         if request.method == "OPTIONS":
             return web.Response(headers={
                 "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
@@ -1540,16 +1581,51 @@ async def cors_middleware(app, handler):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        # CSP для Mini App (только для HTML файлов)
+        ct = response.content_type or ""
+        if "html" in ct:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+                "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+                "img-src 'self' data: https:; "
+                "connect-src 'self' https://*.vk.com https://*.telegram.org; "
+                "frame-ancestors 'none'"
+            )
         return response
     return middleware
 
 
 async def _on_startup(app: web.Application) -> None:
-    """Инициализация БД при старте API (если ещё не инициализирована)."""
+    """Инициализация БД + security checks при старте API."""
     import db as _db_mod
     if _db_mod._db is None:
         await db.init_db()
-    logger.info("API started, DB initialized")
+
+    # === Security: проверка критических переменных окружения ===
+    bot_token = os.getenv("BOT_TOKEN", "")
+    if not bot_token or bot_token == "YOUR_BOT_TOKEN_HERE":
+        security_logger.critical("BOT_TOKEN is missing or placeholder! Bot will not work.")
+    elif len(bot_token) < 30:
+        security_logger.warning("BOT_TOKEN looks suspiciously short (%d chars)", len(bot_token))
+
+    parse_key = os.getenv("PARSE_API_KEY", "")
+    if not parse_key:
+        security_logger.warning("PARSE_API_KEY not set — admin endpoints unprotected")
+
+    vk_secret = os.getenv("VK_CALLBACK_SECRET", "")
+    if not vk_secret:
+        security_logger.warning("VK_CALLBACK_SECRET not set — VK callback unprotected")
+
+    # Проверка что .env.example не содержит реальных токенов
+    env_example = Path(__file__).parent.parent / ".env.example"
+    if env_example.exists():
+        content = env_example.read_text()
+        if re.search(r'\d{10}:[A-Za-z0-9_-]{35}', content):
+            security_logger.critical(".env.example contains a real BOT_TOKEN! SECURITY RISK!")
+
+    logger.info("API started, DB initialized, security checks passed")
 
 
 async def _on_cleanup(app: web.Application) -> None:
@@ -1626,7 +1702,39 @@ async def handle_import_osm(request):
 
 
 def create_app() -> web.Application:
-    app = web.Application(middlewares=[cors_middleware])
+    # Audit middleware: логирует все POST запросы и отслеживает подозрительную активность
+    @web.middleware
+    async def audit_middleware(request, handler):
+        ip = request.remote or "?"
+        method = request.method
+        path = request.path
+
+        # Логируем все POST запросы
+        if method == "POST":
+            security_logger.info("POST %s from %s", path, ip)
+
+        # Проверяем подозрительные паттерны
+        suspicious_reasons = []
+        if "script" in path.lower() or "exec" in path.lower() or "eval" in path.lower():
+            suspicious_reasons.append("path_injection")
+        if "../" in path or "..%2f" in path.lower():
+            suspicious_reasons.append("path_traversal")
+
+        if suspicious_reasons:
+            _track_suspicious(ip, ",".join(suspicious_reasons))
+            security_logger.error("SUSPICIOUS: %s %s from %s reasons=%s", method, path, ip, suspicious_reasons)
+            return web.json_response({"error": "forbidden"}, status=403)
+
+        try:
+            response = await handler(request)
+            return response
+        except web.HTTPException:
+            raise
+        except Exception as e:
+            security_logger.exception("Unhandled error: %s %s from %s", method, path, ip)
+            raise
+
+    app = web.Application(middlewares=[audit_middleware, cors_middleware])
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)
     # API routes

@@ -82,8 +82,17 @@ async def run_api():
 
 async def run_bot():
     """Запускает Telegram-бота."""
+    import re as _re
     if not settings.BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN пуст. Проверь bot/.env")
+
+    # Security: валидация формата токена
+    if not _re.match(r'^\d{10}:[A-Za-z0-9_-]{35}$', settings.BOT_TOKEN):
+        logger.warning("BOT_TOKEN format looks unusual — check if it's correct")
+
+    if settings.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        raise RuntimeError("BOT_TOKEN is placeholder! Set real token in bot/.env")
+
     session = make_session()
     bot = Bot(
         token=settings.BOT_TOKEN,
