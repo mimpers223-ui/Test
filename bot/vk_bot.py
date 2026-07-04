@@ -151,8 +151,35 @@ def _truncate(text: str, limit: int = 4090) -> str:
 
 
 def _vk_text(text: str) -> str:
-    """Strip HTML tags — VK doesn't render them."""
-    return re.sub(r"<[^>]+>", "", text)
+    """Конвертирует HTML в VK-совместимый markdown.
+
+    VK по умолчанию НЕ парсит HTML (<b>, <i>) — теги видны как текст.
+    Используем VK markdown: **bold**, *italic*.
+
+    Правила:
+      <b>text</b>  → **text**
+      <i>text</i>  → *text*
+      <br>         → \\n
+      <code>text</code> → `text`
+      прочие теги  → удаляются
+    """
+    if not text:
+        return text
+    # Переносы строк
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?p\s*/?>', '\n', text, flags=re.IGNORECASE)
+    # Bold → **
+    text = re.sub(r'<b>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE | re.DOTALL)
+    # Italic → *
+    text = re.sub(r'<i>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE | re.DOTALL)
+    # Underline, strikethrough — удаляем (нет аналога в VK)
+    text = re.sub(r'</?u\s*/?>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?s\s*/?>', '', text, flags=re.IGNORECASE)
+    # Code → ` `
+    text = re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.IGNORECASE | re.DOTALL)
+    # Удаляем все остальные теги
+    text = re.sub(r'<[^>]+>', '', text)
+    return text
 
 
 async def _ensure_user(msg: Message) -> int | None:

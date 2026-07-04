@@ -64,6 +64,39 @@ VK_API_VERSION = "5.199"
 USER_STATE_TTL = 1800  # 30 минут
 
 
+def format_for_vk(text: str) -> str:
+    """Преобразует HTML-разметку в VK-совместимый формат.
+
+    VK по умолчанию НЕ парсит HTML (<b>, <i>), теги видны как текст.
+    Используем VK markdown: **bold**, *italic*.
+
+    Правила:
+      <b>text</b>  → **text**
+      <i>text</i>  → *text*
+      <br>         → \\n (новая строка)
+      <code>text</code> → `text`
+      прочие теги  → удаляются
+    """
+    import re
+    if not text:
+        return text
+    # Сохраняем переносы строк до замены
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?p\s*/?>', '\n', text, flags=re.IGNORECASE)
+    # Bold: <b>text</b> → **text**
+    text = re.sub(r'<b>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE | re.DOTALL)
+    # Italic: <i>text</i> → *text*
+    text = re.sub(r'<i>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE | re.DOTALL)
+    # Underline, strikethrough — без аналога в VK markdown, оставляем как plain
+    text = re.sub(r'</?u\s*/?>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?s\s*/?>', '', text, flags=re.IGNORECASE)
+    # Code: <code>text</code> → `text`
+    text = re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.IGNORECASE | re.DOTALL)
+    # Удаляем все остальные теги
+    text = re.sub(r'<[^>]+>', '', text)
+    return text
+
+
 # === State management с TTL ===
 _user_state: dict[int, tuple[dict, float]] = {}
 _vk_subscribe_cache: dict[int, tuple[bool, float]] = {}
@@ -131,6 +164,8 @@ async def _vk_api_call(method: str, params: dict) -> dict:
 
 async def _vk_send(peer_id: int, text: str, keyboard: str | None = None) -> dict:
     """Отправляет сообщение пользователю."""
+    # Конвертируем HTML в VK markdown
+    text = format_for_vk(text)
     params = {
         "peer_id": peer_id,
         "message": text,
