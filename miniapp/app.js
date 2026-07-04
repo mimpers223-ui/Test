@@ -138,6 +138,8 @@
     city: '',
     cityRegion: '',
     fuel: '',
+    maxPrice: 0,
+    network: '',
     searchQuery: '',
     stations: [],
     userLocation: null, // { lat, lon }
@@ -427,6 +429,8 @@
       params.set('city', state.city);
       if (state.region) params.set('region', state.region);
       if (state.fuel) params.set('fuel', state.fuel);
+      if (state.maxPrice > 0) params.set('max_price', state.maxPrice);
+      if (state.network) params.set('network', state.network);
       params.set('limit', '50');
       const data = await api('/api/stations/by-city?' + params);
       state.stations = data.stations || [];
@@ -1336,6 +1340,55 @@
         loadStations();
       });
     });
+
+    // Advanced filters: price & network
+    const priceSheet = document.getElementById('price-filter-sheet');
+    const networkSheet = document.getElementById('network-filter-sheet');
+    const btnPrice = document.getElementById('btn-price-filter');
+    const btnNetwork = document.getElementById('btn-network-filter');
+
+    if (btnPrice) {
+      btnPrice.addEventListener('click', () => {
+        priceSheet.hidden = !priceSheet.hidden;
+        networkSheet.hidden = true;
+        haptic('light');
+      });
+    }
+    if (btnNetwork) {
+      btnNetwork.addEventListener('click', () => {
+        networkSheet.hidden = !networkSheet.hidden;
+        priceSheet.hidden = true;
+        haptic('light');
+      });
+    }
+
+    // Price chips
+    $$('.chip-price').forEach(c => {
+      c.addEventListener('click', () => {
+        $$('.chip-price').forEach(b => b.classList.remove('active'));
+        c.classList.add('active');
+        state.maxPrice = parseInt(c.dataset.price) || 0;
+        haptic('light');
+        loadStations();
+      });
+    });
+
+    // Network chips
+    $$('.chip-network').forEach(c => {
+      c.addEventListener('click', () => {
+        $$('.chip-network').forEach(b => b.classList.remove('active'));
+        c.classList.add('active');
+        state.network = c.dataset.network || '';
+        haptic('light');
+        loadStations();
+      });
+    });
+
+    // Close buttons
+    const priceClose = document.getElementById('price-close');
+    const networkClose = document.getElementById('network-close');
+    if (priceClose) priceClose.addEventListener('click', () => { priceSheet.hidden = true; });
+    if (networkClose) networkClose.addEventListener('click', () => { networkSheet.hidden = true; });
 
     // Report sheet
     $$('.chip-fuel-sheet').forEach(c => {

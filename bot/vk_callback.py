@@ -42,7 +42,10 @@ from vk_keyboards import (
     VK_BTN_HOME,
     vk_main_menu,
     vk_city_keyboard,
+    vk_fuel_filter_keyboard,
     vk_fuel_type_keyboard,
+    vk_price_filter_keyboard,
+    vk_network_filter_keyboard,
     vk_report_status_keyboard,
     vk_subscribe_geo_keyboard,
     vk_subscribe_radius_keyboard,
@@ -370,22 +373,89 @@ async def handle_owner_info(peer_id: int) -> None:
 
 
 # === Search ===
-async def handle_text_search(peer_id: int, query: str) -> None:
+async def handle_text_search(
+    peer_id: int,
+    query: str,
+    fuel: str = "all",
+    max_price: float | None = None,
+    network: str | None = None,
+) -> None:
     if not query or len(query) < 2:
         await _vk_send(peer_id, "Введи минимум 2 символа.", vk_main_menu())
         return
+
+    fuel_param = None if fuel in ("all", "", None) else fuel
+
     # 1) Сначала пробуем как город
-    stations = await find_stations_by_city(city=query, has_stock=False, limit=5)
+    stations = await find_stations_by_city(
+        city=query,
+        has_stock=False,
+        limit=20,
+        fuel_type=fuel_param,
+        max_price=max_price,
+        network=network,
+    )
     if not stations:
         # 2) Как название/сеть
-        stations = await find_stations_by_name(query, limit=5)
+        stations = await find_stations_by_name(query, limit=20)
     if not stations:
         # 3) Как адрес
-        stations = await find_stations_by_address(query, limit=5)
+        stations = await find_stations_by_address(query, limit=20)
+
     if not stations:
-        await _vk_send(peer_id, f"😔 По «{query}» ничего не нашёл.", vk_main_menu())
+        filter_desc = []
+        if fuel_param:
+            fuel_label = {"92": "АИ-92", "95": "АИ-95", "98": "АИ-98",
+                         "100": "АИ-100", "diesel": "Дизель", "lpg": "Газ"}.get(fuel_param, fuel_param)
+            filter_desc.append(f"топливо {fuel_label}")
+        if max_price:
+            filter_desc.append(f"до {max_price}₽")
+        if network:
+            filter_desc.append(f"сеть: {network}")
+
+        await _vk_send(peer_id,
+            f"😔 В городе «{query}» ничего не найдено.\n"
+            + (f"Фильтры: {', '.join(filter_desc)}\n\n" if filter_desc else "\n")
+            + "Попробуй сбросить фильтры или выбрать другой город.",
+            vk_fuel_filter_keyboard(query),
+        )
         return
-    await show_station(peer_id, stations[0])
+
+    # Показываем список (до 5)
+    fuel_label = {
+        "92": "АИ-92", "95": "АИ-95", "98": "АИ-98",
+        "100": "АИ-100", "diesel": "Дизель", "lpg": "Газ"
+    }.get(fuel_param, "")
+    filter_parts = []
+    if fuel_label:
+        filter_parts.append(fuel_label)
+    if max_price:
+        filter_parts.append(f"до {max_price}₽")
+    if network:
+        filter_parts.append(network)
+    filter_text = f" · {'/'.join(filter_parts)}" if filter_parts else ""
+
+    lines = [f"🗺 <b>{query}</b>{filter_text} — найдено {len(stations)} АЗС\n"]
+    buttons = []
+    for i, s in enumerate(stations[:5]):
+        op = s.get("operator") or s.get("name") or "АЗС"
+        addr = s.get("address") or ""
+        lines.append(f"\n{i+1}. {op}")
+        if addr:
+            lines.append(f"   📍 {addr[:50]}")
+        buttons.append([_callback_button(
+            f"📍 {i+1}. {op[:25]}",
+            {"a": "station", "s": s.get("id")},
+            "primary"
+        )])
+
+    buttons.append([
+        _callback_button("◀️ К фильтрам", {"a": "city", "c": query}, "secondary"),
+        _callback_button("🏠 В начало", {"a": "home"}),
+    ])
+
+    text = "\n".join(lines)
+    await _vk_send(peer_id, text, vk_keyboard(buttons))
 
 
 async def show_station(peer_id: int, station: dict) -> None:
@@ -746,6 +816,12 @@ async def process_message_event(event: dict) -> None:
     logger.info("[vk-cb-evt] peer=%d action=%r ack_ok=%s", peer_id, action, ack_ok)
 
     # === Роутер по action ===
+    # Пустой action = VK прислал message_event без payload (например, для
+    # кнопок без callback data или internal UI events). Трактуем как "home".
+    if not action:
+        logger.info("[vk-cb-router] empty action, treating as 'home'")
+        action = "home"
+
     logger.info("[vk-cb-router] entering router with action=%r", action)
     if action == "home":
         _clear_state(peer_id)
@@ -782,8 +858,67 @@ async def process_message_event(event: dict) -> None:
     elif action == "city":
         city = payload.get("c", "")
         if city:
-            _clear_state(peer_id)
-            await handle_text_search(peer_id, city)
+            _set_state(peer_id, {"flow": "search", "city": city})
+            # Показываем фильтр по типу топлива ПЕРЕД поиском
+            await _vk_send(
+                peer_id,
+                f"📍 <b>{city}</b>\n\n"
+                f"Выбери тип топлива для поиска или «Все АЗС» для просмотра всех заправок:",
+                vk_fuel_filter_keyboard(city),
+            )
+
+    elif action == "city_fuel":
+        city = payload.get("c", "")
+        fuel = payload.get("f", "all")
+        if city:
+            _set_state(peer_id, {"flow": "search", "city": city, "fuel": fuel})
+            await handle_text_search(peer_id, city, fuel=fuel)
+
+    elif action == "city_price":
+        city = payload.get("c", "")
+        if city:
+            state = _get_state(peer_id)
+            fuel = state.get("fuel") if state else None
+            await _vk_send(
+                peer_id,
+                f"💰 <b>Фильтр по цене для {city}</b>{f' (АИ-{fuel})' if fuel else ''}:\n\n"
+                f"Выбери максимальную цену за литр:",
+                vk_price_filter_keyboard(city, fuel),
+            )
+
+    elif action == "city_price_set":
+        city = payload.get("c", "")
+        max_price = payload.get("p", 0)
+        fuel = payload.get("f") or None
+        if city:
+            _set_state(peer_id, {"flow": "search", "city": city, "fuel": fuel, "max_price": max_price})
+            await handle_text_search(peer_id, city, fuel=fuel, max_price=max_price if max_price else None)
+
+    elif action == "city_net":
+        city = payload.get("c", "")
+        if city:
+            state = _get_state(peer_id)
+            fuel = state.get("fuel") if state else None
+            await _vk_send(
+                peer_id,
+                f"🏪 <b>Фильтр по сети АЗС для {city}</b>:\n\n"
+                f"Выбери сеть или «Любая сеть»:",
+                vk_network_filter_keyboard(city, fuel),
+            )
+
+    elif action == "city_net_set":
+        city = payload.get("c", "")
+        network = payload.get("n", "")
+        fuel = payload.get("f") or None
+        if city:
+            _set_state(peer_id, {"flow": "search", "city": city, "fuel": fuel, "network": network})
+            await handle_text_search(peer_id, city, fuel=fuel, network=network if network else None)
+
+    elif action == "city_emergency":
+        city = payload.get("c", "")
+        if city:
+            _set_state(peer_id, {"flow": "search", "city": city})
+            await handle_text_search(peer_id, city, fuel=None)
 
     elif action == "city_input":
         _set_state(peer_id, {"awaiting": "city_input"})

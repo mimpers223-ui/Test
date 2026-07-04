@@ -257,7 +257,7 @@ async def main():
         print(f"Фильтр по bbox: {args.bbox}")
 
     # Для dry-run тоже инициализируем БД (чтобы загрузить список АЗС), но не пишем
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.init_db()
 
     # Загружаем АЗС без адреса
@@ -373,7 +373,7 @@ async def main():
                 except Exception as e:
                     if attempt < 2:
                         await asyncio.sleep(2)
-                        if not os.getenv("_API_MODE"):
+                        if not db.API_MODE:
                             try:
                                 await db.close_db()
                                 await db.init_db()
@@ -437,7 +437,7 @@ async def main():
                 print(f"  🗑 Checkpoint удалён (всё обработано)")
             except OSError:
                 pass
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.close_db()
     return 0
 

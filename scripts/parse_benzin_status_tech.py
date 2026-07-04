@@ -390,8 +390,8 @@ async def save_station_reports(station_id: int, station_obj: dict, detail: dict)
 
 async def run(cities: list[str]) -> int:
     logger.info("=== Парсер benzin-status.tech (%d городов) ===", len(cities))
-    logger.info("  USE_SQLITE=%s _API_MODE=%s", db.USE_SQLITE, os.getenv("_API_MODE"))
-    if not os.getenv("_API_MODE"):
+    logger.info("  USE_SQLITE=%s _API_MODE=%s", db.USE_SQLITE, db.API_MODE)
+    if not db.API_MODE:
         await db.init_db()
     await db.stale_old_reports("benzin_status_tech")
 
@@ -406,7 +406,7 @@ async def run(cities: list[str]) -> int:
                 logger.warning("  [%s] ошибка: %s", city, e, exc_info=True)
             await asyncio.sleep(1)  # rate limit между городами
 
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.close_db()
     logger.info("=== Total: %d отчётов ===", total)
     return total

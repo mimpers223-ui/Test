@@ -97,6 +97,43 @@
         <button class="chip chip-fuel" data-fuel="lpg">Газ</button>
       </div>
 
+      <!-- Advanced filters (price + network) -->
+      <div class="chips-row" id="advanced-filters">
+        <button class="chip chip-adv" id="btn-price-filter">💰 Цена</button>
+        <button class="chip chip-adv" id="btn-network-filter">🏪 Сеть</button>
+      </div>
+
+      <!-- Price filter sheet (hidden by default) -->
+      <div class="price-filter-sheet" id="price-filter-sheet" hidden>
+        <div class="sheet-header">
+          <span class="sheet-title">💰 Макс. цена за литр</span>
+          <button class="sheet-close" id="price-close">✕</button>
+        </div>
+        <div class="chips-row chips-row-tight">
+          <button class="chip chip-price" data-price="40">до 40₽</button>
+          <button class="chip chip-price" data-price="45">до 45₽</button>
+          <button class="chip chip-price" data-price="50">до 50₽</button>
+          <button class="chip chip-price" data-price="55">до 55₽</button>
+          <button class="chip chip-price active" data-price="0">Любая</button>
+        </div>
+      </div>
+
+      <!-- Network filter sheet (hidden by default) -->
+      <div class="network-filter-sheet" id="network-filter-sheet" hidden>
+        <div class="sheet-header">
+          <span class="sheet-title">🏪 Сеть АЗС</span>
+          <button class="sheet-close" id="network-close">✕</button>
+        </div>
+        <div class="chips-row chips-row-tight">
+          <button class="chip chip-network active" data-network="">Все</button>
+          <button class="chip chip-network" data-network="lukoil">Лукойл</button>
+          <button class="chip chip-network" data-network="gazprom">Газпром</button>
+          <button class="chip chip-network" data-network="rosneft">Роснефть</button>
+          <button class="chip chip-network" data-network="tatneft">Татнефть</button>
+          <button class="chip chip-network" data-network="bashneft">Башнефть</button>
+        </div>
+      </div>
+
       <!-- Section: nearest / results -->
       <div class="section-header">
         <h2 class="section-title" id="results-title">Ближайшие АЗС</h2>

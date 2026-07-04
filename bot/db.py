@@ -25,6 +25,10 @@ USE_SQLITE = os.getenv("USE_SQLITE", "true").lower() == "true"
 DB_PATH = Path(__file__).parent / "benzin.db"
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+# Флаг: API процесс управляет пулом. Парсеры НЕ должны вызывать close_db().
+# Заменяет костыль с os.environ["_API_MODE"].
+API_MODE = False
+
 _db: Any = None
 
 

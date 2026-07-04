@@ -120,15 +120,55 @@ async def run_bot():
         from aiogram.types import BotCommand
         await bot.set_my_commands([
             BotCommand(command="start", description="🏠 Главное меню"),
-            BotCommand(command="find", description="🔍 Найти АЗС"),
-            BotCommand(command="app", description="📱 Открыть приложение"),
-            BotCommand(command="subscribe", description="🔔 Уведомления"),
-            BotCommand(command="profile", description="👤 Профиль"),
-            BotCommand(command="my_stations", description="🏪 Мои АЗС"),
-            BotCommand(command="help", description="❓ Помощь"),
+            BotCommand(command="find", description="🔍 Найти АЗС по городу или адресу"),
+            BotCommand(command="app", description="📱 Открыть приложение с картой"),
+            BotCommand(command="subscribe", description="🔔 Уведомления о наличии топлива"),
+            BotCommand(command="profile", description="👤 Мой профиль и статистика"),
+            BotCommand(command="my_stations", description="🏪 Мои АЗС (избранное)"),
+            BotCommand(command="help", description="❓ Как пользоваться ботом"),
         ])
+        # English commands for international users
+        await bot.set_my_commands([
+            BotCommand(command="start", description="🏠 Main menu"),
+            BotCommand(command="find", description="🔍 Find gas station by city or address"),
+            BotCommand(command="app", description="📱 Open map app"),
+            BotCommand(command="subscribe", description="🔔 Fuel availability alerts"),
+            BotCommand(command="profile", description="👤 My profile"),
+            BotCommand(command="my_stations", description="🏪 My stations (favorites)"),
+            BotCommand(command="help", description="❓ How to use"),
+        ], language_code="en")
     except Exception as e:
         logger.warning("set_my_commands failed: %s", e)
+
+    # === Описание бота (для поиска в Telegram) ===
+    try:
+        await bot.set_my_description(
+            "🔍 Найди ближайшую АЗС с нужным топливом\n\n"
+            "• АИ-92, АИ-95, АИ-98, АИ-100, Дизель, Газ\n"
+            "• Реальные цены и наличие от водителей\n"
+            "• Уведомления о наличии в твоём районе\n"
+            "• Отмечай АЗС и делись ценами с сообществом\n\n"
+            "27 000+ АЗС в 16 городах России"
+        )
+        await bot.set_my_short_description(
+            "🔍 Найти АЗС с бензином, ценами и наличием от водителей"
+        )
+        await bot.set_my_description(
+            "🔍 Find the nearest gas station with available fuel\n\n"
+            "• AI-92, AI-95, AI-98, AI-100, Diesel, LPG\n"
+            "• Real prices and availability from drivers\n"
+            "• Fuel availability alerts in your area\n"
+            "• Report stations and share prices with community\n\n"
+            "27,000+ gas stations in 16 Russian cities",
+            language_code="en"
+        )
+        await bot.set_my_short_description(
+            "🔍 Find gas stations with fuel prices and availability from drivers",
+            language_code="en"
+        )
+        logger.info("Bot description set")
+    except Exception as e:
+        logger.warning("set_my_description failed: %s", e)
 
     logger.info("Бот запущен")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

@@ -147,7 +147,7 @@ def convert_station(raw: dict) -> dict | None:
 async def main():
     import os
     logger.info("=== ishubenzin.ru parser ===")
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await init_db()
     await stale_old_reports("ishubenzin")
     logger.info("DB ready")
@@ -202,7 +202,7 @@ async def main():
                 await asyncio.sleep(0.2)  # не долбить сервер
 
     import os
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await close_db()
     logger.info(f"Done! Stations: {total_stations}, Reports: {total_reports}")
 

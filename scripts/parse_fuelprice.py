@@ -216,7 +216,7 @@ async def main():
 
     print(f"=== Парсер fuelprice.ru ===")
     if not args.dry_run:
-        if not os.getenv("_API_MODE"):
+        if not db.API_MODE:
             await db.init_db()
         await db.stale_old_reports(SOURCE_NAME)
 
@@ -313,7 +313,7 @@ async def main():
         print(f"  Матчей в БД: {total_matched}")
         print(f"  Новых АЗС создано: {total_created}")
         print(f"  Цен сохранено: {total_saved}")
-        if not os.getenv("_API_MODE"):
+        if not db.API_MODE:
             await db.close_db()
     return 0
 

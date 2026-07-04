@@ -140,7 +140,7 @@ async def import_to_db(stations: list) -> tuple[int, int, int]:
 async def main() -> dict:
     logger.info(f"=== Импорт АЗС городов-миллионников из OSM (из файла) ===")
 
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.init_db()
 
     elements = load_osm_data()
@@ -155,7 +155,7 @@ async def main() -> dict:
 
     if not stations:
         logger.warning("Нет станций для импорта")
-        if not os.getenv("_API_MODE"):
+        if not db.API_MODE:
             await db.close_db()
         return {"ok": True, "added": 0, "updated": 0, "total": 0}
 
@@ -175,7 +175,7 @@ async def main() -> dict:
     total, added, updated = await import_to_db(stations)
     logger.info(f"=== OSM result: total={total}, added={added}, updated={updated} ===")
 
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.close_db()
     return {"ok": True, "total": total, "added": added, "updated": updated}
 

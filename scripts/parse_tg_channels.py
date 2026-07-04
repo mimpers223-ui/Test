@@ -743,7 +743,7 @@ async def run_once(upload_url: str = None, api_key: str = ""):
     await client.start()
     logger.info("Authorized as %s", (await client.get_me()).username)
     import os
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.init_db()
     await db.stale_old_reports("tg")
 
@@ -764,7 +764,7 @@ async def run_once(upload_url: str = None, api_key: str = ""):
 
     await client.disconnect()
     import os
-    if not os.getenv("_API_MODE"):
+    if not db.API_MODE:
         await db.close_db()
     logger.info("=== Total TG reports saved: %d ===", total_saved)
     return total_saved

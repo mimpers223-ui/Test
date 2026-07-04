@@ -1311,7 +1311,8 @@ async def handle_parse(request):
             sys.path.insert(0, scripts_dir)
 
         # Флаг для парсеров: НЕ вызывать close_db() (API уже держит пул)
-        os.environ["_API_MODE"] = "1"
+        import db as _db_module
+        _db_module.API_MODE = True
         
         results = {}
         try:
@@ -1368,7 +1369,7 @@ async def handle_parse(request):
         except Exception as e:
             results["benzin_status_tech"] = str(e)
         
-        os.environ.pop("_API_MODE", None)
+        _db_module.API_MODE = False
         logger.info("Background parsers finished: %s", results)
         global _parsers_running
         _parsers_running = False
@@ -1405,7 +1406,7 @@ async def handle_parse_benzin(request):
         parser_logger.setLevel(logging.INFO)
         parser_logger.propagate = False  # чтобы не дублировать в root
 
-        os.environ["_API_MODE"] = "1"
+        db.API_MODE = True
         parser_logger.info("=== НАЧАЛО: handler count=%d ===", len(parser_logger.handlers))
         count = await parse_benzin_status_tech.run([city])
         parser_logger.info("=== КОНЕЦ: saved=%d ===", count)
@@ -1489,8 +1490,12 @@ async def handle_vk_callback(request):
 
 
 # === CORS ===
-# ВНИМАНИЕ: в проде ограничить через ALLOWED_ORIGINS env var.
-ALLOWED_ORIGINS = "*"  # default для dev; в проде задать через env
+# В проде — только домены Mini App и VK. В dev — * для удобства.
+ALLOWED_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "")
+if ALLOWED_ORIGINS_RAW:
+    ALLOWED_ORIGINS = ALLOWED_ORIGINS_RAW
+else:
+    ALLOWED_ORIGINS = "*"  # dev mode
 
 
 async def cors_middleware(app, handler):
@@ -1535,7 +1540,7 @@ async def handle_enrich(request):
         scripts_dir = str(Path(__file__).parent.parent / "scripts")
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
-        os.environ["_API_MODE"] = "1"
+        db.API_MODE = True
         try:
             import enrich_addresses
             sys.argv = ["enrich_addresses.py", "--limit", "200", "--provider", "photon"]
@@ -1570,7 +1575,7 @@ async def handle_import_osm(request):
         scripts_dir = str(Path(__file__).parent.parent / "scripts")
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
-        os.environ["_API_MODE"] = "1"
+        db.API_MODE = True
         try:
             if region == "million":
                 import import_osm_million_cities

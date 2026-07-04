@@ -263,6 +263,82 @@ def vk_fuel_type_keyboard(station_id: int) -> str:
     ])
 
 
+def vk_fuel_filter_keyboard(city: str) -> str:
+    """Полное меню фильтров после выбора города (как в TG боте).
+
+    callback actions: city_fuel, city_price, city_net, city_emergency
+    """
+    return vk_keyboard([
+        [
+            _callback_button("⛽ АИ-92", {"a": "city_fuel", "c": city, "f": "92"}, "primary"),
+            _callback_button("⛽ АИ-95", {"a": "city_fuel", "c": city, "f": "95"}, "primary"),
+        ],
+        [
+            _callback_button("⛽ АИ-98", {"a": "city_fuel", "c": city, "f": "98"}, "secondary"),
+            _callback_button("🛢 Дизель", {"a": "city_fuel", "c": city, "f": "diesel"}, "secondary"),
+        ],
+        [
+            _callback_button("💰 По цене", {"a": "city_price", "c": city}, "secondary"),
+            _callback_button("🏪 По сети", {"a": "city_net", "c": city}, "secondary"),
+        ],
+        [
+            _callback_button("🚨 Экстренный", {"a": "city_emergency", "c": city}, "negative"),
+            _callback_button("📋 Все АЗС", {"a": "city_fuel", "c": city, "f": "all"}, "primary"),
+        ],
+        [
+            _callback_button("◀️ К городам", {"a": "find"}, "secondary"),
+            _callback_button("🏠 В начало", {"a": "home"}),
+        ],
+    ])
+
+
+def vk_price_filter_keyboard(city: str, fuel: str | None = None) -> str:
+    """Фильтр по цене (как в TG боте)."""
+    suffix = f" (АИ-{fuel})" if fuel else ""
+    return vk_keyboard([
+        [
+            _callback_button("💰 До 40₽", {"a": "city_price_set", "c": city, "p": 40, "f": fuel or ""}, "primary"),
+            _callback_button("💰 До 45₽", {"a": "city_price_set", "c": city, "p": 45, "f": fuel or ""}, "primary"),
+        ],
+        [
+            _callback_button("💰 До 50₽", {"a": "city_price_set", "c": city, "p": 50, "f": fuel or ""}, "secondary"),
+            _callback_button("💰 До 55₽", {"a": "city_price_set", "c": city, "p": 55, "f": fuel or ""}, "secondary"),
+        ],
+        [
+            _callback_button("📋 Любая цена", {"a": "city_price_set", "c": city, "p": 0, "f": fuel or ""}, "primary"),
+        ],
+        [
+            _callback_button("◀️ Назад", {"a": "city", "c": city}, "secondary"),
+            _callback_button("🏠 В начало", {"a": "home"}),
+        ],
+    ])
+
+
+def vk_network_filter_keyboard(city: str, fuel: str | None = None) -> str:
+    """Фильтр по сети АЗС (как в TG боте)."""
+    networks = [
+        ("Лукойл", "lukoil"), ("Газпром", "gazprom"),
+        ("Роснефть", "rosneft"), ("Татнефть", "tatneft"),
+        ("Башнефть", "bashneft"), ("Сургутнефтегаз", "surgut"),
+    ]
+    rows = []
+    for i in range(0, len(networks), 2):
+        row = []
+        for name, key in networks[i:i+2]:
+            row.append(_callback_button(
+                name, {"a": "city_net_set", "c": city, "n": key, "f": fuel or ""}, "secondary"
+            ))
+        rows.append(row)
+    rows.append([
+        _callback_button("📋 Любая сеть", {"a": "city_net_set", "c": city, "n": "", "f": fuel or ""}, "primary"),
+    ])
+    rows.append([
+        _callback_button("◀️ Назад", {"a": "city", "c": city}, "secondary"),
+        _callback_button("🏠 В начало", {"a": "home"}),
+    ])
+    return vk_keyboard(rows)
+
+
 def vk_report_status_keyboard(station_id: int, fuel: str) -> str:
     """Статус наличия топлива."""
     return vk_keyboard([
