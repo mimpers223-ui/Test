@@ -711,11 +711,13 @@ async def process_message_event(event: dict) -> None:
     logger.info("[vk-cb-evt] peer=%d action=%r ack_ok=%s", peer_id, action, ack_ok)
 
     # === Роутер по action ===
+    logger.info("[vk-cb-router] entering router with action=%r", action)
     if action == "home":
         _clear_state(peer_id)
         await _vk_send(peer_id, "Главное меню:", vk_main_menu())
 
     elif action == "find":
+        logger.info("[vk-cb-router] calling handle_find for peer=%d", peer_id)
         await handle_find(peer_id)
 
     elif action == "help":
