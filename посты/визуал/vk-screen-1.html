@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; }
+  body { width: 600px; height: 1200px; overflow: hidden; font-family: 'Inter', -apple-system, Arial, sans-serif; }
+
+  .screen1 {
+    width: 600px; height: 1200px;
+    background: linear-gradient(160deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; padding: 80px 60px; position: relative;
+  }
+  .logo { font-size: 200px; line-height: 1; margin-bottom: 40px; filter: drop-shadow(0 16px 40px rgba(0,0,0,0.4)); }
+  .title { font-size: 72px; font-weight: 900; text-align: center; line-height: 1; margin-bottom: 20px; letter-spacing: -2px; }
+  .gradient {
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sub { font-size: 30px; color: #cbd5e1; text-align: center; margin-bottom: 80px; font-weight: 300; }
+
+  .feature {
+    width: 100%; background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(10px);
+    padding: 24px 28px; border-radius: 18px;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .feature-icon { font-size: 44px; flex-shrink: 0; }
+  .feature-text { font-size: 22px; color: #f1f5f9; font-weight: 500; }
+
+  .footer { position: absolute; bottom: 60px; left: 0; right: 0; text-align: center; color: #94a3b8; font-size: 18px; }
+</style>
+</head>
+<body>
+<div class="screen1">
+  <div class="logo">⛽</div>
+  <div class="title"><span class="gradient">Бензин рядом</span></div>
+  <div class="sub">Где есть бензин прямо сейчас</div>
+
+  <div class="feature">
+    <div class="feature-icon">🟢</div>
+    <div class="feature-text">Реальный статус от водителей</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">🗺</div>
+    <div class="feature-text">27 000+ АЗС по всей России</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">💰</div>
+    <div class="feature-text">Актуальные цены и очереди</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">🔔</div>
+    <div class="feature-text">Push о завозе топлива</div>
+  </div>
+
+  <div class="footer">vk.com/benzyn_ryadom</div>
+</div>
+</body>
+</html>

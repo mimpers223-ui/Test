@@ -68,6 +68,9 @@ def _callback_button(label: str, payload: dict | str, color: str = "secondary") 
     Требует Callback API. Нажатие НЕ создаёт новое сообщение,
     а показывает spinner; ответ через messages.sendMessageEventAnswer.
 
+    В Long Poll режиме vkbottle НЕ поддерживает callback — там кнопка
+    рисуется, но нажатие не обрабатывается. Используйте _button() для Long Poll.
+
     payload: dict (сериализуется в JSON) или готовая JSON-строка.
     """
     if isinstance(payload, dict):
@@ -93,6 +96,29 @@ def _location_button() -> dict:
     }
 
 
+def _is_callback_mode() -> bool:
+    """Определяет, активен ли Callback API (а не Long Poll)."""
+    import os
+    return os.getenv("VK_CALLBACK_ENABLED", "").lower() in ("1", "true", "yes")
+
+
+def _smart_button(label: str, action: str, color: str = "secondary", payload: dict | None = None) -> dict:
+    """Универсальная кнопка: callback если Callback API, иначе text.
+
+    В Callback API режиме — callback-кнопка с payload {a: action, ...}
+    В Long Poll режиме — text-кнопка с префиксом "[action]" (парсится в тексте)
+    """
+    if _is_callback_mode():
+        full_payload = {"a": action, **(payload or {})}
+        return _callback_button(label, full_payload, color)
+    # Long Poll fallback: text-кнопка с маркером
+    if payload:
+        text = f"[{action}]" + "".join(f"|{k}={v}" for k, v in payload.items())
+    else:
+        text = f"[{action}]"
+    return _button(text, color)
+
+
 def vk_keyboard(rows: list[list[dict]], one_time: bool = False, inline: bool = False) -> str:
     """Сериализует клавиатуру VK в JSON."""
     kb = {
@@ -116,25 +142,32 @@ VK_BTN_HOME = "🏠 В начало"
 
 
 def vk_main_menu() -> str:
-    """Главное меню VK — использует callback-кнопки для inline-навигации."""
+    """Главное меню VK — адаптивные кнопки (callback или text в зависимости от режима)."""
     import os
+    use_callback = _is_callback_mode()
     rows = [
         [
-            _callback_button(VK_BTN_FIND, {"a": "find"}, "primary"),
-            _callback_button(VK_BTN_REPORT, {"a": "report_start"}, "positive"),
+            _callback_button(VK_BTN_FIND, {"a": "find"}, "primary") if use_callback
+            else _button(VK_BTN_FIND, "primary"),
+            _callback_button(VK_BTN_REPORT, {"a": "report_start"}, "positive") if use_callback
+            else _button(VK_BTN_REPORT, "positive"),
         ],
     ]
-    # Добавляем кнопку Mini App / ссылку на приложение
+    # Mini App кнопка
     app_id = os.getenv("VK_MINI_APP_ID", "")
     if app_id and app_id.isdigit():
         rows.append([_vkapp_button("📱 Открыть приложение", int(app_id))])
     rows.append([
-        _callback_button(VK_BTN_SUBSCRIBE, {"a": "subscribe"}),
-        _callback_button(VK_BTN_OWNER, {"a": "owner"}),
+        _callback_button(VK_BTN_SUBSCRIBE, {"a": "subscribe"}) if use_callback
+        else _button(VK_BTN_SUBSCRIBE),
+        _callback_button(VK_BTN_OWNER, {"a": "owner"}) if use_callback
+        else _button(VK_BTN_OWNER),
     ])
     rows.append([
-        _callback_button(VK_BTN_PROFILE, {"a": "profile"}),
-        _callback_button(VK_BTN_HELP, {"a": "help"}),
+        _callback_button(VK_BTN_PROFILE, {"a": "profile"}) if use_callback
+        else _button(VK_BTN_PROFILE),
+        _callback_button(VK_BTN_HELP, {"a": "help"}) if use_callback
+        else _button(VK_BTN_HELP),
     ])
     return vk_keyboard(rows)
 

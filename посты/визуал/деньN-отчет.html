@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" width=1080>
+<title>Отчёт — 04.07.2026</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1080px; height: 1500px; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; background: #0a0e1a; color: #fff; }
+
+  .report {
+    width: 1080px; min-height: 1500px;
+    background: linear-gradient(160deg, #0a0e1a 0%, #1a1f3a 50%, #0f1428 100%);
+    padding: 50px 60px 50px;
+    position: relative;
+  }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+  .logo { font-size: 30px; font-weight: 800; }
+  .logo-icon { color: #3b82f6; }
+  .badge {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 22px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+  }
+
+  .title { font-size: 50px; font-weight: 900; line-height: 1.1; margin-bottom: 12px; }
+  .title-gradient {
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .subtitle { font-size: 20px; color: #cbd5e1; margin-bottom: 36px; }
+
+  /* Stats row */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+  .stat {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 18px 14px;
+    text-align: center;
+  }
+  .stat-value { font-size: 32px; font-weight: 900; color: #fff; line-height: 1; }
+  .stat-value.blue { color: #60a5fa; }
+  .stat-value.green { color: #10b981; }
+  .stat-value.purple { color: #a78bfa; }
+  .stat-value.yellow { color: #fbbf24; }
+  .stat-label { font-size: 12px; color: #94a3b8; margin-top: 5px; }
+
+  /* Achievements */
+  .section-title {
+    font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::before { content: ""; width: 4px; height: 22px; background: linear-gradient(180deg, #3b82f6, #8b5cf6); border-radius: 2px; }
+
+  .achievements { display: flex; flex-direction: column; gap: 11px; margin-bottom: 32px; }
+  .ach {
+    background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.05));
+    border-left: 3px solid #3b82f6;
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .ach-icon { font-size: 28px; flex-shrink: 0; width: 50px; text-align: center; }
+  .ach-content { flex: 1; }
+  .ach-title { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+  .ach-desc { font-size: 13px; color: #94a3b8; line-height: 1.3; }
+
+  .ach.purple { border-left-color: #a78bfa; background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(139,92,246,0.05)); }
+  .ach.green { border-left-color: #10b981; background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.05)); }
+  .ach.yellow { border-left-color: #fbbf24; background: linear-gradient(135deg, rgba(251,191,36,0.08), rgba(217,119,6,0.05)); }
+  .ach.pink { border-left-color: #ec4899; background: linear-gradient(135deg, rgba(236,72,153,0.08), rgba(219,39,119,0.05)); }
+  .ach.cyan { border-left-color: #06b6d4; background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(8,145,178,0.05)); }
+
+  /* Sources */
+  .sources {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-bottom: 28px;
+  }
+  .sources-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .src {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; background: rgba(0,0,0,0.3); border-radius: 8px;
+  }
+  .src-name { font-size: 13px; color: #cbd5e1; }
+  .src-count { font-size: 15px; font-weight: 700; color: #10b981; }
+
+  /* Footer */
+  .footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .links { display: flex; gap: 12px; }
+  .link {
+    background: rgba(255,255,255,0.06);
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    color: #cbd5e1;
+    text-decoration: none;
+  }
+  .brand { font-size: 13px; color: #64748b; }
+</style>
+</head>
+<body>
+<div class="report">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="logo"><span class="logo-icon">⛽</span> Бензин рядом</div>
+    </div>
+    <div class="badge">ОТЧЁТ · ДЕНЬ РАЗРАБОТКИ</div>
+  </div>
+
+  <!-- Title -->
+  <div class="title">Масштабное <span class="title-gradient">обновление</span></div>
+  <div class="subtitle">4 июля 2026 — карта, миллионники, новые источники</div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value blue">27K+</div>
+      <div class="stat-label">АЗС в базе</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value green">+3 020</div>
+      <div class="stat-label">+миллионники</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value purple">+570</div>
+      <div class="stat-label">+отчёты/час</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value yellow">100%</div>
+      <div class="stat-label">Mini App fix</div>
+    </div>
+  </div>
+
+  <!-- Achievements -->
+  <div class="section-title">Что сделано</div>
+  <div class="achievements">
+
+    <div class="ach">
+      <div class="ach-icon">🗺️</div>
+      <div class="ach-content">
+        <div class="ach-title">Интерактивная карта в Mini App</div>
+        <div class="ach-desc">Полноценная карта с маркерами по цветам статуса, геолокацией и кликом по маркеру. Работает в TG и VK</div>
+      </div>
+    </div>
+
+    <div class="ach purple">
+      <div class="ach-icon">🌆</div>
+      <div class="ach-content">
+        <div class="ach-title">16 городов-миллионников</div>
+        <div class="ach-desc">Москва, СПб, Новосибирск, Казань, Екатеринбург и др. — 3 020 новых АЗС в базе</div>
+      </div>
+    </div>
+
+    <div class="ach green">
+      <div class="ach-icon">📡</div>
+      <div class="ach-content">
+        <div class="ach-title">Новый источник данных</div>
+        <div class="ach-desc">Подключён crowdsource-источник с реальным статусом топлива от водителей. +570 отчётов/час</div>
+      </div>
+    </div>
+
+    <div class="ach yellow">
+      <div class="ach-icon">🤖</div>
+      <div class="ach-content">
+        <div class="ach-title">TG + VK Mini App</div>
+        <div class="ach-desc">Полная поддержка обеих платформ: манифест, иконки, тёмная тема, VK Bridge. VK Callback API (webhook)</div>
+      </div>
+    </div>
+
+    <div class="ach cyan">
+      <div class="ach-icon">⚡</div>
+      <div class="ach-content">
+        <div class="ach-title">VK Callback API</div>
+        <div class="ach-desc">Webhook вместо Long Poll: callback-кнопки, geo, отчёты, отзывы, подписки. 20+ actions</div>
+      </div>
+    </div>
+
+    <div class="ach pink">
+      <div class="ach-icon">🔧</div>
+      <div class="ach-content">
+        <div class="ach-title">10+ багов исправлено</div>
+        <div class="ach-desc">Дублирование типов топлива, ошибки API, тёмная тема, инициализация Mini App</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Sources -->
+  <div class="section-title">Источники данных (за час)</div>
+  <div class="sources">
+    <div class="sources-grid">
+      <div class="src">
+        <span class="src-name">Парсер цен 1</span>
+        <span class="src-count">+36 799</span>
+      </div>
+      <div class="src">
+        <span class="src-name">Telegram-каналы</span>
+        <span class="src-count">+6 836</span>
+      </div>
+      <div class="src">
+        <span class="src-name">Новый источник ✨</span>
+        <span class="src-count">+570</span>
+      </div>
+      <div class="src">
+        <span class="src-name">Парсер цен 2</span>
+        <span class="src-count">+494</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="links">
+      <span class="link">📱 TG: @benzyn_ryadom</span>
+      <span class="link">💬 VK: vk.com/benzyn_ryadom</span>
+    </div>
+    <div class="brand">⛽ benzin-ryadom.onrender.com</div>
+  </div>
+
+</div>
+</body>
+</html>

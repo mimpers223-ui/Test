@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; }
+  body { width: 600px; height: 1200px; overflow: hidden; font-family: 'Inter', -apple-system, Arial, sans-serif; }
+
+  .screen3 {
+    width: 600px; height: 1200px;
+    background: linear-gradient(160deg, #1a0b2e 0%, #581c87 50%, #ec4899 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; padding: 80px 60px; position: relative;
+  }
+
+  .stats { display: flex; flex-direction: column; gap: 24px; width: 100%; margin-bottom: 50px; }
+  .stat {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.18);
+    backdrop-filter: blur(10px);
+    padding: 28px 32px; border-radius: 20px;
+    display: flex; align-items: center; gap: 24px;
+  }
+  .stat-icon { font-size: 48px; }
+  .stat-n { font-size: 48px; font-weight: 900; line-height: 1; }
+  .stat-l { font-size: 18px; opacity: 0.8; margin-top: 2px; }
+  .s1 .stat-n { color: #6ee7b7; }
+  .s2 .stat-n { color: #fbbf24; }
+  .s3 .stat-n { color: #a78bfa; }
+  .s4 .stat-n { color: #60a5fa; }
+
+  .title { font-size: 64px; font-weight: 900; text-align: center; line-height: 1; margin-bottom: 16px; letter-spacing: -1px; }
+  .gradient {
+    background: linear-gradient(90deg, #f0abfc, #fb923c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sub { font-size: 24px; color: #fce7f3; text-align: center; margin-bottom: 50px; font-weight: 300; }
+
+  .footer { position: absolute; bottom: 60px; left: 0; right: 0; text-align: center; color: #f9a8d4; font-size: 18px; }
+</style>
+</head>
+<body>
+<div class="screen3">
+  <div class="title"><span class="gradient">27 000+ АЗС</span></div>
+  <div class="sub">по всей России</div>
+
+  <div class="stats">
+    <div class="stat s1">
+      <div class="stat-icon">🏙</div>
+      <div><div class="stat-n">16</div><div class="stat-l">городов-миллионников</div></div>
+    </div>
+    <div class="stat s2">
+      <div class="stat-icon">📊</div>
+      <div><div class="stat-n">+570</div><div class="stat-l">отчётов каждый час</div></div>
+    </div>
+    <div class="stat s3">
+      <div class="stat-icon">🌆</div>
+      <div><div class="stat-n">487</div><div class="stat-l">АЗС в Ивановской области</div></div>
+    </div>
+    <div class="stat s4">
+      <div class="stat-icon">💎</div>
+      <div><div class="stat-n">100%</div><div class="stat-l">бесплатно и без рекламы</div></div>
+    </div>
+  </div>
+
+  <div class="footer">vk.com/benzyn_ryadom</div>
+</div>
+</body>
+</html>
