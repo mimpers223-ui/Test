@@ -72,65 +72,139 @@ parse_yandex_fuel = _safe_import("parse_yandex_fuel")
 
 
 # Топ городов России по населению (включая Крым, ЛНР, ДНР)
+# Полный список всех областных центров + крупные города + Крым/ДНР/ЛНР
 TOP_CITIES = [
-    "moskva",
-    "sankt-peterburg",
-    "novosibirsk",
-    "ekaterinburg",
-    "kazan",
-    "krasnodar",
-    "chelyabinsk",
-    "nizhniy-novgorod",
-    "samara",
-    "rostov-na-donu",
-    "ufa",
-    "krasnoyarsk",
-    # Крым
-    "simferopol",
-    "sevastopol",
-    "kerch",
-    "yalta",
-    "evpatoriya",
-    "feodosiya",
-    "alushta",
-    "bahchisaray",
-    # ЛНР/ДНР
-    "donetsk",
-    "lugansk",
-    "mariupol",
-    "gorlovka",
-    "kramatogorsk",
-    "slavyansk",
-    "alchevsk",
-    "lisichansk",
-    "severodonetsk",
-    # Дополнительные крупные города
-    "orenburg",
-    "penza",
-    "voronezh",
-    "belgorod",
-    "izhevsk",
-    "cheboksary",
-    "perm",
-    "kirov",
-    "tyumen",
-    "surgut",
-    "irkutsk",
-    "habarovsk",
-    "nahodka",
-    "vladivostok",
-    "yakutsk",
-    "stavropol",
-    "pyatigorsk",
-    "nalchik",
-    "vladikavkaz",
-    "grozny",
-    "mahachkala",
-    "barnaul",
-    "kemerovo",
-    "novokuznetsk",
-    "tomsk",
-    "omsk",
+    # === ЦФО ===
+    "moskva",           # Москва
+    "voronezh",         # Воронежская обл.
+    "belgorod",         # Белгородская обл.
+    "bryansk",          # Брянская обл.
+    "vladimir",         # Владимирская обл.
+    "ivanovo",          # Ивановская обл.
+    "kaluga",           # Калужская обл.
+    "kostroma",         # Костромская обл.
+    "kursk",            # Курская обл.
+    "lipetsk",          # Липецкая обл.
+    "orel",             # Орловская обл.
+    "ryazan",           # Рязанская обл.
+    "smolensk",         # Смоленская обл.
+    "tambov",           # Тамбовская обл.
+    "tver",             # Тверская обл.
+    "tula",             # Тульская обл.
+    "yaroslavl",        # Ярославская обл.
+    # === СЗФО ===
+    "sankt-peterburg",  # Санкт-Петербург
+    "kaliningrad",      # Калининградская обл.
+    "arkhangelsk",      # Архангельская обл.
+    "vologda",          # Вологодская обл.
+    "murmansk",         # Мурманская обл."
+    "novgorod",         # Новгородская обл.
+    "pskov",            # Псковская обл.
+    "syktyvkar",        # Коми
+    "petrozavodsk",     # Карелия
+    # === ЮФО ===
+    "krasnodar",        # Краснодарский край
+    "rostov-na-donu",   # Ростовская обл.
+    "astrahan",         # Астраханская обл.
+    "volgograd",        # Волгоградская обл.
+    "elistа",           # Калмыкия
+    "maykop",           # Адыгея
+    "sochi",            # Сочи
+    # === СКФО ===
+    "stavropol",        # Ставропольский край
+    "pyatigorsk",       # Пятигорск
+    "nalchik",          # Кабардино-Балкария
+    "vladikavkaz",      # Северная Осетия
+    "grozny",           # Чечня
+    "mahachkala",       # Дагестан
+    "magas",            # Ингушетия
+    "cherkessk",        # Карачаево-Черкесия
+    "nalchik",          # Кабардино-Балкария
+    # === ПФО ===
+    "kazan",            # Татарстан
+    "ufa",              # Башкортостан
+    "samara",           # Самарская обл.
+    "nizhniy-novgorod", # Нижегородская обл.
+    "orenburg",         # Оренбургская обл.
+    "penza",            # Пензенская обл."
+    "perm",             # Пермский край
+    "kirov",            # Кировская обл.
+    "cheboksary",       # Чувашия
+    "izhevsk",          # Удмуртия
+    "saransk",          # Мордовия
+    "ulyanovск",        # Ульяновская обл.
+    "tolyatti",         # Тольятти
+    "naberezhnye-chelny", # Набережные Челны
+    # === УФО ===
+    "ekaterinburg",     # Свердловская обл.
+    "chelyabinsk",      # Челябинская обл.
+    "tyumen",           # Тюменская обл.
+    "kurgan",           # Курганская обл.
+    "surgut",           # ХМАО
+    "nizhnevartovsk",   # ХМАО
+    # === СФО ===
+    "novosibirsk",      # Новосибирская обл.
+    "omsk",             # Омская обл.
+    "krasnoyarsk",      # Красноярский край
+    "barnaul",          # Алтайский край
+    "kemerovo",         # Кемеровская обл.
+    "novokuznetsk",     # Кемеровская обл.
+    "tomsk",            # Томская обл.
+    "irkutsk",          # Иркутская обл.
+    "abakan",           # Хакасия
+    "gorno-altaysk",    # Алтай
+    # === ДФО ===
+    "habarovsk",        # Хабаровский край
+    "vladivostok",      # Приморский край
+    "yakutsk",          # Якутия
+    "blagoveshchensk",  # Амурская обл.
+    "chita",            # Забайкальский край
+    "nahodka",          # Приморский край
+    "ussuriysk",        # Приморский край
+    "petropavlovsk-kamchatsky", # Камчатка
+    "yuzhno-sakhalinsk", # Сахалинская обл.
+    "magадан",          # Магаданская обл.
+    "anadyr",           # Чукотка
+    # === КРЫМ ===
+    "simferopol",       # Крым
+    "sevastopol",       # Севастополь
+    "kerch",            # Крым
+    "yalta",            # Крым
+    "evpatoriya",       # Крым
+    "feodosiya",        # Крым
+    "alushta",          # Крым
+    "bahchisaray",      # Крым
+    "saki",             # Крым
+    "dzhankoy",         # Крым
+    "yevpatoria",       # Крым
+    # === ДНР ===
+    "donetsk",          # ДНР
+    "mariupol",         # ДНР
+    "makeevka",         # ДНР
+    "gorlovka",         # ДНР
+    "kramatogorsk",     # ДНР
+    "slavyansk",        # ДНР
+    "konstantinovka",   # ДНР
+    "bakhmut",          # ДНР
+    "enakievo",         # ДНР
+    "debaltsevo",       # ДНР
+    "toretsk",          # ДНР
+    "volnovakha",       # ДНР
+    "kurakhovo",        # ДНР
+    # === ЛНР ===
+    "lugansk",          # ЛНР
+    "alchevsk",         # ЛНР
+    "lisichansk",       # ЛНР
+    "severodonetsk",    # ЛНР
+    "brыanka",          # ЛНР
+    "stakhanov",        # ЛНР
+    "krasny-luch",      # ЛНР
+    "rubizhne",         # ЛНР
+    "popasna",          # ЛНР
+    "svatove",          # ЛНР
+    "starobilsk",       # ЛНР
+    "rovenky",          # ЛНР
+    "antratsit",        # ЛНР
 ]
 
 
@@ -409,6 +483,31 @@ async def parse_yandex_fuel_runner():
         ("Самара", 53.1959, 50.1002),
         ("Уфа", 54.7388, 55.9721),
         ("Воронеж", 51.6615, 39.2003),
+        ("Ростов-на-Дону", 47.2357, 39.7015),
+        ("Волгоград", 48.7194, 44.5018),
+        ("Пермь", 58.0105, 56.2502),
+        ("Тюмень", 57.1522, 65.5272),
+        ("Омск", 54.9885, 73.3242),
+        ("Красноярск", 56.0106, 92.8525),
+        ("Барнаул", 53.3548, 83.7697),
+        ("Иркутск", 52.2864, 104.3057),
+        ("Хабаровск", 48.4802, 135.0719),
+        ("Владивосток", 43.1198, 131.8869),
+        ("Ставрополь", 45.0428, 41.9734),
+        ("Пятигорск", 44.0454, 43.0543),
+        ("Нальчик", 43.4846, 43.6072),
+        ("Владикавказ", 43.0205, 44.6819),
+        ("Грозный", 43.3125, 45.6989),
+        ("Махачкала", 42.9849, 47.5047),
+        # Крым
+        ("Симферополь", 44.9521, 34.1024),
+        ("Севастополь", 44.6167, 33.5254),
+        ("Керчь", 45.3528, 36.4744),
+        # ДНР
+        ("Донецк", 48.0028, 37.8053),
+        ("Мариуполь", 47.0958, 37.5461),
+        # ЛНР
+        ("Луганск", 48.5740, 39.3078),
     ]
     print(f"\n[yandex_fuel] {len(cities_coords)} городов, Яндекс.Заправки API")
     try:
