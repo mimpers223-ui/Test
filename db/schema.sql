@@ -83,7 +83,37 @@ CREATE TABLE IF NOT EXISTS reports (
     source TEXT DEFAULT 'user',                -- 'user', 'owner', 'telegram', 'osm'
     expires_at TIMESTAMPTZ,                    -- когда отчёт считать устаревшим
     next_delivery_at TIMESTAMPTZ,              -- прогноз следующего завоза (если известен)
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Fuel quality
+    octane_rating REAL,
+    cetane_number REAL,
+    additives TEXT,
+    quality_score REAL,
+    fuel_standard TEXT,
+    certification TEXT,
+    -- Queue data
+    queue_wait_minutes INTEGER,
+    queue_trend TEXT,
+    -- Limits
+    limit_per_visit INTEGER,
+    limit_daily INTEGER,
+    limit_weekly INTEGER,
+    -- Reviews
+    review_text TEXT,
+    rating REAL,
+    photos_count INTEGER DEFAULT 0,
+    -- Amenities
+    has_car_wash BOOLEAN DEFAULT FALSE,
+    has_shop BOOLEAN DEFAULT FALSE,
+    has_restaurant BOOLEAN DEFAULT FALSE,
+    has_atm BOOLEAN DEFAULT FALSE,
+    has_parking BOOLEAN DEFAULT FALSE,
+    has_ev_charging BOOLEAN DEFAULT FALSE,
+    -- Info
+    accessibility TEXT,
+    opening_hours TEXT,
+    phone TEXT,
+    website TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_reports_station ON reports (station_id, fuel_type);

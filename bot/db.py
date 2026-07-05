@@ -298,6 +298,40 @@ async def _create_schema_pg(pool):
         except Exception as e:
             logger.warning(f"PG migration owner_stations promoted: {e}")
 
+        # 2b. Reports: новые колонки для качеств/очередей/лимитов
+        new_report_cols = [
+            ("octane_rating", "REAL"),
+            ("cetane_number", "REAL"),
+            ("additives", "TEXT"),
+            ("quality_score", "REAL"),
+            ("fuel_standard", "TEXT"),
+            ("certification", "TEXT"),
+            ("queue_wait_minutes", "INTEGER"),
+            ("queue_trend", "TEXT"),
+            ("limit_per_visit", "INTEGER"),
+            ("limit_daily", "INTEGER"),
+            ("limit_weekly", "INTEGER"),
+            ("review_text", "TEXT"),
+            ("rating", "REAL"),
+            ("photos_count", "INTEGER DEFAULT 0"),
+            ("has_car_wash", "BOOLEAN DEFAULT FALSE"),
+            ("has_shop", "BOOLEAN DEFAULT FALSE"),
+            ("has_restaurant", "BOOLEAN DEFAULT FALSE"),
+            ("has_atm", "BOOLEAN DEFAULT FALSE"),
+            ("has_parking", "BOOLEAN DEFAULT FALSE"),
+            ("has_ev_charging", "BOOLEAN DEFAULT FALSE"),
+            ("accessibility", "TEXT"),
+            ("opening_hours", "TEXT"),
+            ("phone", "TEXT"),
+            ("website", "TEXT"),
+        ]
+        for col_name, col_type in new_report_cols:
+            try:
+                await conn.execute(f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
+            except Exception as e:
+                if "already exists" not in str(e):
+                    logger.warning(f"PG migration reports.{col_name}: {e}")
+
         # 3. Автоимпорт из SQLite если PG пуста
         try:
             cnt = await conn.fetchval("SELECT COUNT(*) FROM stations")
