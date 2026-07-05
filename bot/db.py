@@ -1963,7 +1963,9 @@ async def get_station_current_status(station_id: int) -> list:
     """
     if USE_SQLITE:
         async with _db.execute(
-            """SELECT fuel_type, available, price, queue_size, has_limit, limit_liters, canister_ban, confidence, created_at, next_delivery_at, source
+            """SELECT fuel_type, available, price, queue_size, has_limit, limit_liters, canister_ban,
+                      limit_per_visit, limit_daily, limit_weekly,
+                      confidence, created_at, next_delivery_at, source
                FROM reports
                WHERE station_id = ?
                  AND (
@@ -2001,7 +2003,9 @@ async def get_station_current_status(station_id: int) -> list:
                 """
                 SELECT
                     fuel_type, available, price, queue_size, has_limit,
-                    limit_liters, canister_ban, confidence, created_at,
+                    limit_liters, canister_ban,
+                    limit_per_visit, limit_daily, limit_weekly,
+                    confidence, created_at,
                     next_delivery_at, source
                 FROM reports
                 WHERE station_id = $1
@@ -2035,7 +2039,9 @@ async def get_stations_with_statuses(stations: list) -> list:
     if USE_SQLITE:
         async with _db.execute(
             f"""SELECT station_id, fuel_type, available, price, queue_size,
-                       has_limit, limit_liters, canister_ban, confidence, created_at, next_delivery_at, source
+                       has_limit, limit_liters, canister_ban,
+                       limit_per_visit, limit_daily, limit_weekly,
+                       confidence, created_at, next_delivery_at, source
                 FROM reports
                 WHERE station_id IN ({placeholders})
                   AND (
@@ -2053,7 +2059,9 @@ async def get_stations_with_statuses(stations: list) -> list:
         async with _db.acquire() as conn:
             rows = await conn.fetch(
                 f"""SELECT station_id, fuel_type, available, price, queue_size,
-                        has_limit, limit_liters, canister_ban, confidence,
+                        has_limit, limit_liters, canister_ban,
+                        limit_per_visit, limit_daily, limit_weekly,
+                        confidence,
                         created_at, next_delivery_at, source
                     FROM reports
                     WHERE station_id = ANY($1)

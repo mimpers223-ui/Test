@@ -9,6 +9,9 @@ export interface FuelStatus {
   queue_size?: number | null;
   has_limit?: boolean;
   limit_liters?: number | null;
+  limit_per_visit?: number | null;
+  limit_daily?: number | null;
+  limit_weekly?: number | null;
   canister_ban?: boolean;
   comment?: string;
   confidence?: number;

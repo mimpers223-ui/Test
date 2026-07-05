@@ -590,6 +590,14 @@
       if (st.canister_ban) {
         limitHtml += `<span class="fuel-canister-ban">❌ канистры запрещены</span>`;
       }
+      // Детальные лимиты per fuel
+      const detailParts = [];
+      if (st.limit_per_visit) detailParts.push(`за раз: ${st.limit_per_visit}л`);
+      if (st.limit_daily) detailParts.push(`в день: ${st.limit_daily}л`);
+      if (st.limit_weekly) detailParts.push(`в неделю: ${st.limit_weekly}л`);
+      if (detailParts.length > 0) {
+        limitHtml += `<span class="fuel-limit-detail">📏 ${detailParts.join(' · ')}</span>`;
+      }
       return `
         <div class="${rowCls}">
           <div class="fuel-name">${fuelLabel(st.fuel_type)}</div>
@@ -610,8 +618,11 @@
       const comment = (gl.comment || '').toUpperCase();
       const hasLimit = gl.has_limit;
       const limitLiters = gl.limit_liters;
+      const limitPerVisit = gl.limit_per_visit;
+      const limitDaily = gl.limit_daily;
+      const limitWeekly = gl.limit_weekly;
       const canisterBan = gl.canister_ban || comment.includes('ЗАПРЕТ') || comment.includes('КАНИСТР');
-      if (hasLimit || canisterBan) {
+      if (hasLimit || canisterBan || limitPerVisit || limitDaily || limitWeekly) {
         let limitText = '';
         if (hasLimit && limitLiters) {
           limitText = `🚫 <b>Лимит заправки:</b> до ${limitLiters}л`;
@@ -621,6 +632,13 @@
           if (canisterBan) limitText += ' · ❌ заправка в канистры запрещена';
         } else if (canisterBan) {
           limitText = '🚫 <b>Запрет заправки в канистры</b>';
+        }
+        const detailParts = [];
+        if (limitPerVisit) detailParts.push(`за раз: ${limitPerVisit}л`);
+        if (limitDaily) detailParts.push(`в день: ${limitDaily}л`);
+        if (limitWeekly) detailParts.push(`в неделю: ${limitWeekly}л`);
+        if (detailParts.length > 0) {
+          limitText += `<br><span style="font-size:0.85em;opacity:0.8">📏 ${detailParts.join(' · ')}</span>`;
         }
         globalLimitsHtml = `<div class="global-limits">${limitText}</div>`;
       }

@@ -1264,8 +1264,11 @@ function StationDetail({
               const comment = (gl.comment || "").toUpperCase();
               const hasLimit = gl.has_limit;
               const limitLiters = gl.limit_liters;
+              const limitPerVisit = gl.limit_per_visit;
+              const limitDaily = gl.limit_daily;
+              const limitWeekly = gl.limit_weekly;
               const canisterBan = gl.canister_ban || comment.includes("ЗАПРЕТ") || comment.includes("КАНИСТР");
-              if (!hasLimit && !canisterBan) return null;
+              if (!hasLimit && !canisterBan && !limitPerVisit && !limitDaily && !limitWeekly) return null;
               let limitText = "";
               if (hasLimit && limitLiters) {
                 limitText = `Лимит заправки: до ${limitLiters}л`;
@@ -1276,9 +1279,18 @@ function StationDetail({
               } else if (canisterBan) {
                 limitText = "Запрет заправки в канистры";
               }
+              const detailParts: string[] = [];
+              if (limitPerVisit) detailParts.push(`за раз: ${limitPerVisit}л`);
+              if (limitDaily) detailParts.push(`в день: ${limitDaily}л`);
+              if (limitWeekly) detailParts.push(`в неделю: ${limitWeekly}л`);
               return (
                 <div className="p-3 rounded-xl border border-danger/20 bg-danger/5 text-danger text-sm">
                   🚫 {limitText}
+                  {detailParts.length > 0 && (
+                    <div className="mt-1 text-xs opacity-80">
+                      📏 {detailParts.join(" · ")}
+                    </div>
+                  )}
                 </div>
               );
             })()}

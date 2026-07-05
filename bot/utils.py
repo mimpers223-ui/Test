@@ -51,6 +51,19 @@ def format_fuel_status(status: dict | None) -> str:
 
     if has_limit and limit_liters:
         line += f"  •  лимит {limit_liters}л"
+    # Детальные лимиты per fuel
+    limit_per_visit = status.get("limit_per_visit")
+    limit_daily = status.get("limit_daily")
+    limit_weekly = status.get("limit_weekly")
+    detail_parts = []
+    if limit_per_visit:
+        detail_parts.append(f"за раз {limit_per_visit}л")
+    if limit_daily:
+        detail_parts.append(f"в день {limit_daily}л")
+    if limit_weekly:
+        detail_parts.append(f"в неделю {limit_weekly}л")
+    if detail_parts:
+        line += f"  •  📏 {' · '.join(detail_parts)}"
 
     if queue is not None and queue > 0:
         line += f"  •  очередь ~{queue}"
@@ -283,6 +296,9 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
             gl = global_limits[-1]  # берём последний (самый свежий)
             has_limit = gl.get("has_limit")
             limit_liters = gl.get("limit_liters")
+            limit_per_visit = gl.get("limit_per_visit")
+            limit_daily = gl.get("limit_daily")
+            limit_weekly = gl.get("limit_weekly")
             canister_ban = False
             comment = (gl.get("comment") or "").upper()
             if "ЗАПРЕТ" in comment or "КАНИСТР" in comment:
@@ -299,6 +315,16 @@ def format_station_card(station: dict, statuses: list | None = None) -> str:
                 lines.append(limit_line)
             elif canister_ban:
                 lines.append("🚫 <b>Запрет заправки в канистры</b>")
+            # Детальные лимиты (per visit / daily / weekly)
+            detail_parts = []
+            if limit_per_visit:
+                detail_parts.append(f"за раз: {limit_per_visit}л")
+            if limit_daily:
+                detail_parts.append(f"в день: {limit_daily}л")
+            if limit_weekly:
+                detail_parts.append(f"в неделю: {limit_weekly}л")
+            if detail_parts:
+                lines.append(f"📏 <b>Лимиты:</b> {' · '.join(detail_parts)}")
 
         # Ближайший завоз
         from datetime import datetime, timezone

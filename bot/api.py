@@ -775,7 +775,9 @@ async def _bulk_get_statuses(station_ids: list[int]) -> dict[int, list]:
     if USE_SQLITE:
         rows = await _fetch(
             f"""SELECT station_id, fuel_type, available, price, queue_size, has_limit,
-                      limit_liters, canister_ban, confidence, created_at
+                      limit_liters, canister_ban,
+                      limit_per_visit, limit_daily, limit_weekly,
+                      confidence, created_at
                FROM (
                    SELECT *, ROW_NUMBER() OVER (
                        PARTITION BY station_id, fuel_type
@@ -793,7 +795,9 @@ async def _bulk_get_statuses(station_ids: list[int]) -> dict[int, list]:
         rows = await _fetch(
             f"""SELECT DISTINCT ON (station_id, fuel_type)
                     station_id, fuel_type, available, price, queue_size,
-                    has_limit, limit_liters, canister_ban, confidence, created_at
+                    has_limit, limit_liters, canister_ban,
+                    limit_per_visit, limit_daily, limit_weekly,
+                    confidence, created_at
                 FROM reports
                 WHERE station_id = ANY($1)
                   AND created_at > NOW() - INTERVAL '24 hours'
@@ -1379,17 +1383,10 @@ async def handle_parse(request):
         except Exception as e:
             results["ishubenzin"] = str(e)
         
-        tg_api_id = os.getenv("TG_API_ID", "")
-        tg_api_hash = os.getenv("TG_API_HASH", "")
-        if tg_api_id and tg_api_hash:
-            try:
-                import parse_tg_channels
-                await parse_tg_channels.run_once()
-                results["tg_channels"] = "ok"
-            except Exception as e:
-                results["tg_channels"] = str(e)
-        else:
-            results["tg_channels"] = "skipped (no API keys)"
+        # TG channels parser REMOVED from API — runs via Render cron only.
+        # Using TG_SESSION_STRING from API + cron simultaneously causes
+        # "authorization key used under two different IP addresses" error.
+        results["tg_channels"] = "skipped (runs via cron only)"
 
         # benzin-status.tech (Mini App для @benzin_status_bot) — прямой API
         try:
