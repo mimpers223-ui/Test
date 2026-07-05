@@ -68,7 +68,7 @@ if sq_users:
         rows.append((
             r["id"], r["telegram_id"], r["username"], r["first_name"], r["last_name"],
             r["language_code"], r["reputation"], r["total_reports"], r["confirmed_reports"],
-            r["badge"], r["region"], r["city"], r["is_owner"], r["is_blocked"],
+            r["badge"], r["region"], r["city"], bool(r["is_owner"]), bool(r["is_blocked"]),
             r["created_at"], r["last_active_at"],
         ))
     execute_values(cur, """INSERT INTO users
@@ -83,11 +83,21 @@ sq_st = sq.execute("SELECT * FROM stations").fetchall()
 if sq_st:
     rows = []
     for r in sq_st:
+        # Convert fuel_types from JSON string to PostgreSQL array format
+        fuel_types_raw = r["fuel_types"]
+        if fuel_types_raw:
+            try:
+                ft_list = json.loads(fuel_types_raw)
+                ft_pg = "{" + ",".join(f'"{ft}"' for ft in ft_list) + "}"
+            except (json.JSONDecodeError, TypeError):
+                ft_pg = "{}"
+        else:
+            ft_pg = "{}"
         rows.append((
             r["id"], r["osm_id"], r["name"], r["operator"], r["brand"], r["network"],
             r["country"], r["region"], r["city"], r["address"],
-            r["lat"], r["lon"], json.dumps(json.loads(r["fuel_types"]) if r["fuel_types"] else []),
-            r["has_24_7"], r["phone"], r["website"], r["is_verified"], r["is_active"],
+            r["lat"], r["lon"], ft_pg,
+            bool(r["has_24_7"]), r["phone"], r["website"], bool(r["is_verified"]), bool(r["is_active"]),
             r["created_at"], r["updated_at"],
         ))
     execute_values(cur, """INSERT INTO stations
@@ -103,8 +113,8 @@ if sq_rep:
     rows = []
     for r in sq_rep:
         rows.append((
-            r["id"], r["station_id"], r["user_id"], r["fuel_type"], r["available"],
-            r["price"], r["queue_size"], r["has_limit"], r["limit_liters"],
+            r["id"], r["station_id"], r["user_id"], r["fuel_type"], bool(r["available"]),
+            r["price"], r["queue_size"], bool(r["has_limit"]), r["limit_liters"],
             r["comment"], r["confidence"], r["confirmations"], r["disputes"],
             r["source"], r["expires_at"], r["created_at"],
         ))
@@ -123,7 +133,7 @@ if sq_sub:
         rows.append((
             r["id"], r["user_id"], r["station_id"], r["city"], r["region"],
             r["fuel_type"], r["radius_km"], r["center_lat"], r["center_lon"],
-            r["is_active"], r["last_notified_at"], r["created_at"],
+            bool(r["is_active"]), r["last_notified_at"], r["created_at"],
         ))
     execute_values(cur, """INSERT INTO subscriptions
         (id, user_id, station_id, city, region, fuel_type, radius_km,
@@ -138,7 +148,7 @@ if sq_os:
     for r in sq_os:
         rows.append((
             r["id"], r["user_id"], r["station_id"], r["inn"], r["role"],
-            r["is_verified"], r["moderator_id"], r["rejection_reason"],
+            bool(r["is_verified"]), r["moderator_id"], r["rejection_reason"],
             r["created_at"], r["verified_at"],
         ))
     execute_values(cur, """INSERT INTO owner_stations

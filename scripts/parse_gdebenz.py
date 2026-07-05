@@ -4,7 +4,7 @@
 API: https://gdebenz.ru/api/stations?lat1=...&lon1=...&lat2=...&lon2=...
 
 Возвращает станции с real-time статусами наличия от водителей.
-Покрывает ВСЮ Россию: 110+ городов, Крым, ЛНР, ДНР.
+Покрывает ВСЮ Россию: 760+ городов, Крым, ЛНР, ДНР.
 """
 
 import asyncio
@@ -30,11 +30,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# ВСЕ ГОРОДА РОССИИ — 110+ городов, Крым, ЛНР, ДНР
-# Формат: {"name": "...", "lat1": ..., "lon1": ..., "lat2": ..., "lon2": ...}
+# ВСЕ ГОРОДА РОССИИ — 760+ городов
+# Загружаем полный список из сгенерированного файла
 # ============================================================
 
-SEARCH_AREAS = [
+try:
+    from gdebenz_areas_all import SEARCH_AREAS as _FULL_AREAS
+    SEARCH_AREAS = _FULL_AREAS
+    logger.info(f"Загружен полный список: {len(SEARCH_AREAS)} городов")
+except ImportError:
+    logger.warning("Файл gdebenz_areas_all.py не найден, используем встроенный список")
+    SEARCH_AREAS = [
     # ===================== ЦЕНТРАЛЬНЫЙ ФЕДЕРАЛЬНЫЙ ОКРУГ =====================
     # Москва и МО
     {"name": "Москва", "lat1": 55.50, "lon1": 37.30, "lat2": 55.95, "lon2": 37.85},
