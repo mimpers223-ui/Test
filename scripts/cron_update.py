@@ -474,6 +474,54 @@ async def run_quick_parser() -> dict:
     return results
 
 
+async def run_vk_search_parser() -> dict:
+    """Запускает VK парсер через newsfeed.search."""
+    print(f"\n=== VK Search Parser ===")
+    results = {"saved": 0, "errors": 0}
+
+    token = os.getenv("VK_SERVICE_TOKEN", "")
+    if not token:
+        print("  ⏭ VK_SERVICE_TOKEN не задан, пропускаю")
+        return results
+
+    try:
+        import subprocess
+        cmd = [
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), "parse_vk.py"),
+            "--api", "--search",
+            "--query", "АИ-95 цена руб",
+            "--limit", "50",
+        ]
+        env = os.environ.copy()
+        env["VK_SERVICE_TOKEN"] = token
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+        )
+        output = result.stdout + result.stderr
+        for line in output.split("\n"):
+            if "сохранено:" in line.lower():
+                try:
+                    num = int(line.split(":")[-1].strip())
+                    results["saved"] += num
+                except (ValueError, IndexError):
+                    pass
+            elif "error" in line.lower():
+                results["errors"] += 1
+    except subprocess.TimeoutExpired:
+        print("  ⏱ VK parser: timeout")
+        results["errors"] += 1
+    except Exception as e:
+        print(f"  ❌ VK parser: {e}")
+        results["errors"] += 1
+
+    return results
+
+
 async def main():
     start_time = time.time()
     print("=" * 60)
@@ -487,6 +535,7 @@ async def main():
     fuelprice_results = await run_fuelprice_for_all_cities()
     gdebenz_results = await run_gdebenz_parser()
     tg_results = await run_tg_parser()
+    vk_results = await run_vk_search_parser()
     quick_results = await run_quick_parser()
 
     elapsed = time.time() - start_time
@@ -516,9 +565,10 @@ async def main():
     report += f"  📈 fuelprice.ru: {fuelprice_results['saved']} цен\n"
     report += f"  🗺 GdeBenz: {gdebenz_results['saved']} отчётов\n"
     report += f"  📱 TG каналы: {tg_results['saved']} отчётов ({tg_results['channels_found']} каналов)\n"
+    report += f"  🔗 VK поиск: {vk_results['saved']} отчётов\n"
     report += f"  ⚡ Быстрый: {quick_results['saved']} отчётов\n"
     total_errors = (fuelprice_results['errors'] + gdebenz_results['errors'] +
-                   tg_results['errors'] + quick_results['errors'])
+                   tg_results['errors'] + vk_results['errors'] + quick_results['errors'])
     if total_errors:
         report += f"  ⚠ Ошибок: {total_errors}\n"
 
