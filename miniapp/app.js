@@ -427,7 +427,7 @@
     try {
       const params = new URLSearchParams();
       params.set('city', state.city);
-      if (state.region) params.set('region', state.region);
+      if (state.cityRegion) params.set('region', state.cityRegion);
       if (state.fuel) params.set('fuel', state.fuel);
       if (state.maxPrice > 0) params.set('max_price', state.maxPrice);
       if (state.network) params.set('network', state.network);

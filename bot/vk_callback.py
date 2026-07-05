@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 import aiohttp
+import db
 
 from db import (
     find_nearest_stations,
@@ -611,18 +612,19 @@ async def handle_report_status(peer_id: int, station_id: int, fuel: str, value: 
     """Шаг: выбран статус → сохраняем отчёт."""
     avail = {"yes": True, "low": None, "no": False, "queue": None}.get(value, None)
     queue_size = 5 if value == "queue" else None  # "очередь" = примерно 5 машин
+    user_id = await _get_user_id(peer_id)
     try:
         await add_report(
             station_id=station_id,
             fuel_type=fuel,
             available=avail,
+            user_id=user_id,
             queue_size=queue_size,
             source="vk_user",
         )
     except Exception as e:
         logger.warning("add_report failed: %s", e)
     state = _get_state(peer_id)
-    user_id = state.get("user_id") or await _get_user_id(peer_id)
     if user_id:
         await log_event(user_id, "vk_report")
     fuel_name = {"92": "АИ-92", "95": "АИ-95", "98": "АИ-98", "100": "АИ-100",

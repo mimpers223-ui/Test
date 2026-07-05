@@ -1110,7 +1110,7 @@ async def handle_price_update(request):
     Тело: { station_id, fuel_type, price, available?, queue_size?, telegram_id? }
     Создаёт обычный отчёт с заполненным price.
     """
-    if not _check_rate(request.remote or "?", 30):
+    if not _check_rate(request.remote or "?", RATE_LIMIT_POST):
         return web.json_response({"error": "rate limit exceeded"}, status=429)
 
     try:
@@ -1361,56 +1361,48 @@ async def handle_parse(request):
         
         results = {}
         try:
-            import parse_fuelprice
-            sys.argv = ["parse_fuelprice.py", "--create-new"]
-            await parse_fuelprice.main()
-            results["fuelprice"] = "ok"
-        except Exception as e:
-            results["fuelprice"] = str(e)
-        
-        # gdebenz removed — API is unreliable, keeps failing
-        # try:
-        #     import parse_gdebenz
-        #     await parse_gdebenz.main()
-        #     results["gdebenz"] = "ok"
-        # except Exception as e:
-        #     results["gdebenz"] = str(e)
+            try:
+                import parse_fuelprice
+                sys.argv = ["parse_fuelprice.py", "--create-new"]
+                await parse_fuelprice.main()
+                results["fuelprice"] = "ok"
+            except Exception as e:
+                results["fuelprice"] = str(e)
+            
+            # gdebenz removed — API is unreliable, keeps failing
 
-        try:
-            import parse_ishubenzin
-            await parse_ishubenzin.main()
-            results["ishubenzin"] = "ok"
-        except Exception as e:
-            results["ishubenzin"] = str(e)
-        
-        # TG channels parser REMOVED from API — runs via Render cron only.
-        # Using TG_SESSION_STRING from API + cron simultaneously causes
-        # "authorization key used under two different IP addresses" error.
-        results["tg_channels"] = "skipped (runs via cron only)"
+            try:
+                import parse_ishubenzin
+                await parse_ishubenzin.main()
+                results["ishubenzin"] = "ok"
+            except Exception as e:
+                results["ishubenzin"] = str(e)
+            
+            # TG channels parser REMOVED from API — runs via Render only.
+            results["tg_channels"] = "skipped (runs via cron only)"
 
-        # benzin-status.tech (Mini App для @benzin_status_bot) — прямой API
-        try:
-            import parse_benzin_status_tech
-            # Только топ-10 городов за один проход (остальные — в следующий час)
-            tech_cities = [
-                "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
-                "Казань", "Нижний Новгород", "Челябинск", "Самара",
-                "Омск", "Ростов-на-Дону",
-            ]
-            await asyncio.wait_for(
-                parse_benzin_status_tech.run(tech_cities),
-                timeout=240.0,
-            )
-            results["benzin_status_tech"] = "ok"
-        except asyncio.TimeoutError:
-            results["benzin_status_tech"] = "timeout (240s)"
-        except Exception as e:
-            results["benzin_status_tech"] = str(e)
-        
-        _db_module.API_MODE = False
-        logger.info("Background parsers finished: %s", results)
-        global _parsers_running
-        _parsers_running = False
+            # benzin-status.tech (Mini App для @benzin_status_bot) — прямой API
+            try:
+                import parse_benzin_status_tech
+                tech_cities = [
+                    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+                    "Казань", "Нижний Новгород", "Челябинск", "Самара",
+                    "Омск", "Ростов-на-Дону",
+                ]
+                await asyncio.wait_for(
+                    parse_benzin_status_tech.run(tech_cities),
+                    timeout=240.0,
+                )
+                results["benzin_status_tech"] = "ok"
+            except asyncio.TimeoutError:
+                results["benzin_status_tech"] = "timeout (240s)"
+            except Exception as e:
+                results["benzin_status_tech"] = str(e)
+        finally:
+            _db_module.API_MODE = False
+            logger.info("Background parsers finished: %s", results)
+            global _parsers_running
+            _parsers_running = False
 
     asyncio.create_task(_run_parsers())
     return web.json_response({"ok": True, "message": "parsers started in background"})
@@ -1454,12 +1446,18 @@ async def handle_parse_benzin(request):
     except Exception as e:
         import traceback
         logs = log_stream.getvalue()
+        logger.error("parse_benzin error: %s", e)
         return web.json_response({
             "ok": False,
             "error": str(e),
-            "traceback": traceback.format_exc(),
             "logs": logs,
         }, status=500)
+    finally:
+        db.API_MODE = False
+        try:
+            parser_logger.removeHandler(log_handler)
+        except Exception:
+            pass
 
 
 async def handle_vk_callback(request):
@@ -1572,7 +1570,7 @@ async def cors_middleware(app, handler):
             return web.Response(headers={
                 "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
                 "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, X-Parse-Key",
+                "Access-Control-Allow-Headers": "Content-Type, X-Parse-Key, X-VK-User-Id",
                 "Access-Control-Max-Age": "86400",
             })
         try:
@@ -1689,8 +1687,10 @@ async def handle_import_osm(request):
                 logger.info("[osm-import-ivanovo] Done")
         except Exception as e:
             logger.warning("[osm-import-%s] Failed: %s", region, e)
-        global _parsers_running
-        _parsers_running = False
+        finally:
+            global _parsers_running
+            _parsers_running = False
+            db.API_MODE = False
 
     asyncio.create_task(_run_import())
     return web.json_response({"ok": True, "message": f"OSM import ({region}) started in background"})

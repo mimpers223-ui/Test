@@ -822,9 +822,9 @@ async def _execute(sql: str, *args, returning: bool = False):
     """Универсальный execute.
 
     При returning=True: для SQLite возвращает cursor.lastrowid, для PG — результат RETURNING.
+    Если в SQL нет RETURNING, автоматически добавляет RETURNING id.
     """
     if USE_SQLITE:
-        # SQLite использует ? вместо $1, $2, ...; автоматически конвертируем
         sql = _sqlite_sql(sql)
         async with _db.execute(sql, args) as cur:
             await _db.commit()
@@ -832,13 +832,14 @@ async def _execute(sql: str, *args, returning: bool = False):
                 return cur.lastrowid
         return None
     async with _db.acquire() as conn:
-        # Конвертируем ? обратно в $1, $2, ... (как в _fetch)
         import re
         pg_sql = sql
         idx = 1
         while "?" in pg_sql:
             pg_sql = pg_sql.replace("?", f"${idx}", 1)
             idx += 1
+        if returning and "RETURNING" not in pg_sql.upper():
+            pg_sql += " RETURNING id"
         if returning:
             row = await conn.fetchrow(pg_sql, *args)
             return row[0] if row else None
@@ -2242,34 +2243,6 @@ def calculate_confidence(
     # Базовый confidence от источника
     base = base_confidence * get_source_priority(source)
     return min(1.0, base * freshness + agreement + recency)
-
-
-def get_source_priority(source: str) -> float:
-    return SOURCE_PRIORITY.get(source, SOURCE_PRIORITY["default"])
-
-
-# === Confidence модель ===
-# Чем больше подтверждений и свежее данные — тем выше уверенность.
-def calculate_confidence(
-    source: str,
-    age_hours: float,
-    agreement_count: int = 1,
-    base_confidence: float = 0.7,
-) -> float:
-    """Рассчитывает confidence (0..1) для отчёта.
-
-    source: источник данных
-    age_hours: сколько часов назад
-    agreement_count: сколько других источников согласны с этой ценой
-    base_confidence: базовая уверенность источника
-    """
-    # Свежесть: экспоненциальный спад
-    freshness = max(0.1, 1.0 - (age_hours / 24.0) ** 0.5)
-    # Согласие: +0.2 за каждый согласный источник
-    agreement = min(0.4, agreement_count * 0.2)
-    # Базовый confidence от источника
-    base = base_confidence * get_source_priority(source)
-    return min(1.0, base * freshness + agreement)
 
 
 async def get_station_analytics(station_id: int, days: int = 30) -> dict:

@@ -3,6 +3,46 @@
 """
 
 
+def get_main_status(station: dict) -> dict:
+    """Возвращает агрегированный статус станции (иконка + цена).
+
+    Используется в vk_callback.py для краткого отображения станции.
+    """
+    statuses = station.get("statuses", [])
+    if not statuses:
+        return {"icon": "❓", "price": None}
+
+    has_available = False
+    has_low = False
+    has_unavailable = False
+    best_price = None
+
+    for st in statuses:
+        if st.get("fuel_type") == "all":
+            continue
+        available = st.get("available")
+        price = st.get("price")
+        if available is True or available == 1:
+            has_available = True
+        elif available is None:
+            has_low = True
+        elif available is False or available == 0:
+            has_unavailable = True
+        if price is not None and (best_price is None or price < best_price):
+            best_price = price
+
+    if has_available:
+        icon = "✅"
+    elif has_low:
+        icon = "⚠️"
+    elif has_unavailable:
+        icon = "❌"
+    else:
+        icon = "❓"
+
+    return {"icon": icon, "price": best_price}
+
+
 def format_distance(km: float) -> str:
     """Форматирует расстояние в км/м."""
     if km < 1:

@@ -1723,7 +1723,7 @@ async def cmd_set_ad(message: Message):
         await message.answer("⛔ Только для администраторов.")
         return
     raw = message.text.replace("/set_ad", "", 1).strip()
-    if not raw or "|" not in raw:
+    if not raw:
         await message.answer(
             "📢 <b>Установить рекламный баннер</b>\n\n"
             "Формат: <code>/set_ad Текст баннера | https://ссылка</code>\n"
@@ -1731,14 +1731,21 @@ async def cmd_set_ad(message: Message):
             reply_markup=main_menu_keyboard(),
         )
         return
-    parts = raw.split("|", 1)
-    text = parts[0].strip()
-    url = parts[1].strip()
-    if text.lower() == "off":
+    if raw.lower() == "off":
         settings.AD_BANNER_TEXT = ""
         settings.AD_BANNER_URL = ""
         await message.answer("📢 Баннер отключён.")
         return
+    if "|" not in raw:
+        await message.answer(
+            "❌ Формат: <code>/set_ad Текст баннера | https://ссылка</code>\n"
+            "Чтобы удалить: <code>/set_ad off</code>",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    parts = raw.split("|", 1)
+    text = parts[0].strip()
+    url = parts[1].strip()
     if not url.startswith("http"):
         await message.answer("❌ Ссылка должна начинаться с http/https")
         return
@@ -2570,8 +2577,7 @@ async def handle_web_app_data(message: Message):
             await message.answer("⚠️ Не удалось обработать отчёт. Попробуй ещё раз.")
             return
 
-        telegram_id = await get_or_create_user(message)
-        uid = await get_user_id_by_telegram_id(telegram_id)
+        uid = await get_or_create_user(message)
         await add_report(
             station_id=int(station_id),
             user_id=uid,
@@ -2871,7 +2877,7 @@ async def cmd_analytics(message: Message):
     total_reports = 0
     total_subs = 0
     for s in stations:
-        sid = s.get("id") or s.get("station_id")
+        sid = s.get("station_id") or s.get("id")
         a = await get_station_analytics(sid, days=30)
         total_views += a.get("views", 0)
         total_reports += a.get("reports_30d", 0)
@@ -2888,7 +2894,7 @@ async def cmd_analytics(message: Message):
 
     text += "<b>По АЗС:</b>\n"
     for s in stations[:10]:
-        sid = s.get("id") or s.get("station_id")
+        sid = s.get("station_id") or s.get("id")
         a = await get_station_analytics(sid, days=30)
         text += (
             f"\n{ '✅' if s.get('is_verified') else '⏳' } <b>{s.get('name', 'АЗС')[:30]}</b>\n"
@@ -2899,7 +2905,7 @@ async def cmd_analytics(message: Message):
 
     kb_rows = []
     for s in stations[:5]:
-        sid = s.get("id") or s.get("station_id")
+        sid = s.get("station_id") or s.get("id")
         kb_rows.append([InlineKeyboardButton(
             text=f"📊 {s.get('name', 'АЗС')[:25]}", callback_data=f"analy:{sid}",
         )])
