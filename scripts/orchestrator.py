@@ -69,6 +69,7 @@ parse_networks = _safe_import("parse_networks")
 parse_benzin_status_tech = _safe_import("parse_benzin_status_tech")
 parse_benzin_price = _safe_import("parse_benzin_price")
 parse_yandex_fuel = _safe_import("parse_yandex_fuel")
+parse_benzinmap = _safe_import("parse_benzinmap")
 
 
 # Топ городов России по населению (включая Крым, ЛНР, ДНР)
@@ -524,6 +525,22 @@ async def parse_yandex_fuel_runner():
     return {}
 
 
+async def parse_benzinmap_runner():
+    """Запускает benzinmap.ru парсер (62 региона, лимиты/канистры)."""
+    if not parse_benzinmap:
+        print("  ⏭ parse_benzinmap не импортирован")
+        return {}
+    print(f"\n[benzinmap.ru] 62 региона, лимиты/канистры")
+    try:
+        sys.argv = ["parse_benzinmap.py"]
+        await parse_benzinmap.main()
+    except SystemExit:
+        pass
+    except Exception as e:
+        print(f"  ⚠ benzinmap: {e}")
+    return {}
+
+
 SOURCES = {
     "gdebenz": {
         "name": "gdebenz.ru (2700+ городов, краудсорсинг наличия)",
@@ -637,6 +654,12 @@ SOURCES = {
         "name": "Яндекс.Заправки (API, нужен ключ)",
         "function": parse_yandex_fuel_runner,
         "interval_hours": 12,
+        "enabled": True,
+    },
+    "benzinmap": {
+        "name": "benzinmap.ru (62 региона, лимиты/канистры)",
+        "function": parse_benzinmap_runner,
+        "interval_hours": 6,
         "enabled": True,
     },
 }
