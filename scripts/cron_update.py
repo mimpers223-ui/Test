@@ -425,8 +425,8 @@ async def run_limits_parser() -> dict:
 
 
 async def run_gdebenz_parser() -> dict:
-    """Запускает gdebenz.ru парсер (760+ городов)."""
-    print(f"\n=== GdeBenz Parser (760+ городов) ===")
+    """Запускает gdebenz.ru парсер (2700+ городов)."""
+    print(f"\n=== GdeBenz Parser (2700+ городов) ===")
     results = {"saved": 0, "errors": 0}
 
     try:
@@ -439,7 +439,7 @@ async def run_gdebenz_parser() -> dict:
             cmd,
             capture_output=True,
             text=True,
-            timeout=1800,  # 30 минут на 760+ городов
+            timeout=3600,  # 60 минут на 2700+ городов
         )
         output = result.stdout + result.stderr
         for line in output.split("\n"):
@@ -588,7 +588,7 @@ async def main():
 
     report += f"\n<b>Этот запуск:</b>\n"
     report += f"  📈 fuelprice.ru: {fuelprice_results['saved']} цен ({len(TOP_CITIES)} городов)\n"
-    report += f"  🗺 GdeBenz: {gdebenz_results['saved']} отчётов (760+ городов)\n"
+    report += f"  🗺 GdeBenz: {gdebenz_results['saved']} отчётов (2700+ городов)\n"
     report += f"  ⛽ Лимиты/канистры: {limits_results['saved']} отчётов\n"
     report += f"  📱 TG каналы: {tg_results['saved']} отчётов ({tg_results['channels_found']} каналов)\n"
     report += f"  🔗 VK поиск: {vk_results['saved']} отчётов\n"

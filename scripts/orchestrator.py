@@ -63,6 +63,7 @@ parse_quick = _safe_import("parse_quick")
 parse_fuel_quality = _safe_import("parse_fuel_quality")
 parse_queue_data = _safe_import("parse_queue_data")
 parse_limits_canisters = _safe_import("parse_limits_canisters")
+parse_gdebenz = _safe_import("parse_gdebenz")
 
 
 # Топ городов России по населению (включая Крым, ЛНР, ДНР)
@@ -287,6 +288,22 @@ async def enrich_runner():
     return {}
 
 
+async def parse_gdebenz_runner():
+    """Запускает gdebenz.ru парсер (2700+ городов)."""
+    if not parse_gdebenz:
+        print("  ⏭ parse_gdebenz не импортирован")
+        return {}
+    print(f"\n[gdebenz.ru] 2700+ городов (краудсорсинг)")
+    try:
+        sys.argv = ["parse_gdebenz.py"]
+        await parse_gdebenz.main()
+    except SystemExit:
+        pass
+    except Exception as e:
+        print(f"  ⚠ gdebenz: {e}")
+    return {}
+
+
 async def parse_ishubenzin_runner():
     """Запускает ishubenzin.ru парсер (народная карта топлива, без ключа)."""
     if not parse_ishubenzin:
@@ -304,6 +321,12 @@ async def parse_ishubenzin_runner():
 
 
 SOURCES = {
+    "gdebenz": {
+        "name": "gdebenz.ru (2700+ городов, краудсорсинг наличия)",
+        "function": parse_gdebenz_runner,
+        "interval_hours": 1,
+        "enabled": True,
+    },
     "fuelprice": {
         "name": "fuelprice.ru (60+ городов, координаты + цены)",
         "function": parse_fuelprice_all_cities,
