@@ -92,20 +92,30 @@ async def _create_schema_sqlite(db):
     if not schema_path.exists():
         return
 
-    # Сначала добавляем недостающие колонки в существующие таблицы
-    await _migrate_sqlite(db)
-
-    # Потом выполняем schema (CREATE IF NOT EXISTS пропустит существующие)
+    # Сначала создаём все таблицы
     sql = schema_path.read_text(encoding="utf-8")
     await db.executescript(sql)
 
-    # Создаём индексы, которые зависят от миграций
+    # Затем выполняем миграции
+    await _migrate_sqlite(db)
+
+    # Затем индексы
     await _create_indexes_sqlite(db)
     await db.commit()
 
 
 async def _migrate_sqlite(db):
     """Добавляет недостающие колонки в существующие таблицы (для уже созданных БД)."""
+    # Если таблицы ещё не созданы — миграции пропускаем
+    async with db.execute("""
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table'
+          AND name='subscriptions'
+    """) as cur:
+        if await cur.fetchone() is None:
+            return
+
     async with db.execute("PRAGMA table_info(subscriptions)") as cur:
         cols = {row[1] for row in await cur.fetchall()}
 
